@@ -1,13 +1,13 @@
 export default async function handler(req, res) {
   const { cik } = req.query;
-  if (!/^\d{10}$/.test(String(cik || ''))) {
-    res.status(400).json({ error: 'bad CIK' }); return;
-  }
-  const url = `https://data.sec.gov/api/xbrl/companyfacts/${cik}.json`;
+  const padded = String(cik || '').replace(/\D/g, '').padStart(10, '0');
+  if (!/^\d{10}$/.test(padded)) return res.status(400).json({ error: 'bad CIK' });
+
+  const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${padded}.json`;
   try {
     const r = await fetch(url, {
       headers: {
-        'User-Agent': 'UnifiedStockEvaluator/1.0 (you@example.com)',
+        'User-Agent': 'Alpha-Ledger/1.0 (you@example.com)',
         'Accept': 'application/json'
       }
     });
