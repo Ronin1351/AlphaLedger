@@ -1,316 +1,1919 @@
-# Create a complete single-file HTML with:
-# - Single snapshot section (no duplicate IDs)
-# - Compute logic using corrected Net-Debt/EBITDA and ROIC formulas
-# - Reset button that clears all inputs/outputs
-# - Minimal styling close to a dark panel look
-# - F-Score input so the verdict panel can reflect it
-#
-html = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stock Evaluator – Clean Snapshot</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Unified Stock Evaluator — F‑Score + ROIC/Growth</title>
 <style>
-  :root{
-    --bg:#0f1218;
-    --card:#151a22;
-    --muted:#1e2430;
-    --text:#e7eaf0;
-    --sub:#aab3c2;
-    --good:#1f9d55;
-    --warn:#d97706;
-    --bad:#dc2626;
-    --pill:#2a3344;
+  :root {
+    --bg: #0b0f14;
+    --fg: #e8eef4;
+    --muted:#9fb3c8;
+    --card:#0f1620;
     --accent:#f59e0b;
-    --border: #2b3446;
+    --ring:#f59e0b;
+    --good:#16a34a;
+    --bad:#dc2626;
+    --warn:#f59e0b;
+    --link:#60a5fa;
+    --chip:#0b1322;
+    --chip-border:#25324a;
+    --table:#0e1727;
+    --input:#0f172a;
   }
-  *{box-sizing:border-box}
-  body{
+  .light {
+    --bg: #f6f8fb;
+    --fg: #0b1220;
+    --muted:#4b5563;
+    --card:#ffffff;
+    --accent:#0a47a3;
+    --ring:#0a47a3;
+    --good:#15803d;
+    --bad:#b91c1c;
+    --warn:#b45309;
+    --link:#1d4ed8;
+    --chip:#eef2ff;
+    --chip-border:#c7d2fe;
+    --table:#f3f6ff;
+    --input:#eef2ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { height:100%; }
+  body {
     margin:0;
-    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-    background:var(--bg);
-    color:var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+    background: radial-gradient(1200px 600px at 30% -10%, rgba(245,158,11,.12), transparent 60%),
+                radial-gradient(1000px 600px at 120% 10%, rgba(10,71,163,.12), transparent 60%),
+                var(--bg);
+    color: var(--fg);
+    line-height: 1.4;
   }
-  .wrap{max-width:1200px;margin:32px auto;padding:0 16px;display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 10px 24px rgba(0,0,0,.25)}
-  .card h2{margin:0 0 12px;font-size:18px}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .row-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-  .field{border:1px dashed var(--muted);border-radius:10px;padding:10px;display:flex;justify-content:space-between;align-items:center;min-height:44px}
-  .label{opacity:.85}
-  .out{font-weight:600}
-  input[type="number"],input[type="text"]{width:100%;background:#0b0f14;border:1px solid var(--muted);color:var(--text);border-radius:10px;padding:10px}
-  .pill{display:inline-flex;align-items:center;gap:8px;background:var(--pill);border-radius:24px;padding:6px 10px;margin-right:8px;font-size:12px}
-  .btns{display:flex;gap:10px;flex-wrap:wrap}
-  button{background:#0e1726;color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 14px;cursor:pointer}
-  button:hover{border-color:var(--accent)}
-  .sub{color:var(--sub);font-size:12px}
-  .good{background:rgba(31,157,85,.12);border-color:rgba(31,157,85,.35);color:#86efac}
-  .bad{background:rgba(220,38,38,.10);border-color:rgba(220,38,38,.35);color:#fecaca}
-  .note{border:1px dashed var(--muted);border-radius:10px;padding:12px;min-height:44px;color:var(--sub)}
-  .big{font-size:20px;font-weight:700}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  @media (max-width:980px){.wrap{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
-  .kvs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
+  header {
+    max-width:1240px; margin:24px auto 8px; padding:0 16px;
+    display:flex; gap:12px; align-items:center; justify-content:space-between;
+  }
+  .title { font-weight: 800; letter-spacing:.2px; }
+  .muted { color: var(--muted); }
+  .container { max-width:1240px; margin: 0 auto; padding: 8px 16px 80px; }
+  .grid { display:grid; gap:16px; }
+  @media(min-width:1000px){ .grid-cols-2 { grid-template-columns: 1fr 1fr; } }
+  .card {
+    background: var(--card);
+    border: 1px solid rgba(148,163,184,.18);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.18);
+  }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap: wrap; }
+  label { font-weight: 600; display:block; margin-bottom:6px; }
+  .input, select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    outline: none;
+    border: 2px solid var(--ring);
+    background: var(--input);
+    color: var(--fg);
+  }
+  .input.round { border-radius: 999px; background: transparent; }
+  textarea { min-height: 88px; }
+  .btn {
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 2px solid var(--ring);
+    background: transparent;
+    color: var(--fg);
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .small { font-size: 12px; }
+  .kpi { display:grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px 12px; border-radius: 12px; border:1px dashed rgba(148,163,184,.35); }
+  .kpi.good { border-color: rgba(22,163,74,.5); background: rgba(22,163,74,.08); }
+  .kpi.bad { border-color: rgba(220,38,38,.5); background: rgba(220,38,38,.08); }
+  .kpi.na { border-color: rgba(245,158,11,.55); background: rgba(245,158,11,.08); }
+  .kpi .score { font-weight: 800; }
+  .right { text-align: right; }
+  .status-grid { display:grid; grid-template-columns: 1.2fr .8fr .8fr; gap: 8px; }
+  .pill { padding:6px 10px; border-radius:999px; border:1px solid rgba(148,163,184,.35); font-size:12px; display:inline-block; }
+  .pill.ok { color: var(--good); border-color: rgba(22,163,74,.55); }
+  .pill.warn { color: var(--warn); border-color: rgba(245,158,11,.55); }
+  .pill.bad { color: var(--bad); border-color: rgba(220,38,38,.55); }
+  .help {
+    position: relative; display:inline-block; margin-left: 8px; font-size: 12px; cursor: pointer; color: var(--link); text-decoration: underline;
+  }
+  .popover {
+    position: absolute; top: 20px; left: 0; z-index: 10; min-width: 280px; max-width: 380px;
+    background: var(--card); border: 1px solid rgba(148,163,184,.3); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.25); padding: 12px; display: none;
+  }
+  .help:hover .popover { display: block; }
+  .alert { border:1px solid; padding:10px 12px; border-radius:12px; margin: 8px 0; }
+  .alert.warn { border-color: rgba(245,158,11,.55); color: var(--warn); background: rgba(245,158,11,.08); }
+  .alerts { max-width:1240px; margin:0 auto; padding:0 16px; }
+  .tag { border:1px solid rgba(148,163,184,.35); padding:4px 10px; border-radius:999px; font-size:12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; }
+  .chip { background: var(--chip); border:1px solid var(--chip-border); border-radius:12px; padding:8px 12px; font-size:12px; color:#dbeafe; font-weight:700; display:inline-flex; gap:8px; align-items:center; }
+  .chip.ok{ border-color:#1d3b2a; background:#0a1610; color:#b4f5c3 }
+  .chip.warn{ border-color:#4d3d17; background:#161207; color:#ffe4a3 }
+  .chip.bad{ border-color:#502525; background:#160a0a; color:#ffb4b4 }
+
+  .table{ width:100%; border-collapse:separate; border-spacing:0 6px; margin-top:6px; font-size:13px; color:#cbd5e1; }
+  .table th{ text-align:left; color:#9fb2d8; font-weight:700; }
+  .table td,.table th{ padding:6px 10px; }
+  .table tr{ background:var(--table); }
+  .table tr td:first-child, .table tr th:first-child{ border-radius:10px 0 0 10px }
+  .table tr td:last-child, .table tr th:last-child{ border-radius:0 10px 10px 0 }
+
+  .fieldset{ display:grid; gap:12px; grid-template-columns: 1fr 1fr; }
+  .full { grid-column: 1 / -1; }
+
+  /* Notes toggler */
+  .note-wrap{ position:relative; }
+  .note-toggle{ margin-left:8px; font-size:11px; cursor:pointer; color:var(--link); text-decoration:underline; }
+  .note-box{ display:none; margin-top:8px; border:1px solid rgba(245,158,11,.55); background:linear-gradient(180deg, rgba(245,158,11,.06), rgba(245,158,11,.02)); border-radius:12px; padding:8px; }
+  .note-head{ font-size:12px; font-weight:800; letter-spacing:.3px; color:#ffd89a; display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .note-box textarea{ width:100%; min-height:70px; resize:vertical; padding:10px 12px; border-radius:10px; border:1px solid #3b2b12; outline:none; background:var(--input); color:var(--fg); }
+  .missing { box-shadow: 0 0 0 3px rgba(220,38,38,.35) inset; }
+
+  .footer { margin-top: 24px; font-size: 12px; color: var(--muted); text-align: center; }
+
+/* Unified Inputs: 3-column compact layout (Label | Current | Last) */
+.uni-grid{display:grid;gap:10px}
+.uni-row{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px;align-items:center}
+.uni-row label{margin:0;font-weight:600}
+@media(max-width:880px){.uni-row{grid-template-columns:1fr}}
+/* Unified Inputs spacing: label | current | last */
+.uni-grid{row-gap:18px;}
+.uni-row{
+  grid-template-columns: minmax(220px,1.2fr) minmax(220px,1fr) minmax(220px,1fr);
+  column-gap:24px;
+  align-items:start;
+  padding:6px 0;
+}
+.uni-row .input{width:100%;}
+@media (max-width:1200px){
+  .uni-row{
+    grid-template-columns: 1fr 1fr;
+    row-gap:10px;
+    column-gap:16px;
+  }
+  .uni-row > label{grid-column:1/-1;}
+}
+@media (max-width:760px){
+  .uni-row{grid-template-columns:1fr; row-gap:8px;}
+}
+/* Make Unified Inputs span full width so Additional starts below */
+.fieldset > .uni-grid{ grid-column: 1 / -1; }
+/* Make Unified Inputs use full width and avoid clipping */
+.fieldset:has(> .uni-grid){overflow:visible;}
+.fieldset > .uni-grid{
+  grid-column:1 / -1;
+  width:100%;
+  margin-top:8px;
+}
+
+/* Roomy, flexible columns that won’t hide text */
+.uni-grid{row-gap:18px;}
+.uni-row{
+  grid-template-columns: minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr);
+  column-gap:20px;
+  align-items:start;
+}
+.uni-row > label{white-space:normal; line-height:1.25;}
+.uni-row .input{width:100%; max-width:100%;}
+
+/* Responsive: wrap label or stack on smaller screens */
+@media (max-width:1200px){
+  .uni-row{grid-template-columns:1fr 1fr; row-gap:10px; column-gap:16px;}
+  .uni-row > label{grid-column:1/-1;}
+}
+@media (max-width:760px){
+  .uni-row{grid-template-columns:1fr; row-gap:8px;}
+}
+/* Make the note span under both inputs */
+.uni-row .note-wrap{display: contents;}
+.uni-row .note-toggle{grid-column: 2; grid-row: 2;}
+.uni-row .note-box{
+  grid-column: 2 / 4;   /* spans current + last */
+  grid-row: 3;          /* sits below the toggles */
+  width: 100%;
+  margin-top: 4px;
+}
+
 </style>
+
 </head>
-<body>
-  <div class="wrap">
-    <section class="card" id="snap">
-      <h2>ROIC / Debt / Margins / Growth <span class="sub">Snapshot</span></h2>
-      
-      <div class="row">
-        <div class="field"><span class="label">EBIT Margin</span><span id="ebitMarginOut" class="out">—</span></div>
-        <div class="field"><span class="label">Net‑Debt / EBITDA</span><span id="ndebtOut" class="out">—</span></div>
-      </div>
+<body data-theme="dark">
+  <header>
+    <div>
+      <div class="title">Unified Stock Evaluator</div>
+      <div class="muted small">Piotroski F‑Score + ROIC/Growth — one set of inputs, multiple lenses.</div>
+    </div>
+    <div class="row">
+      <button id="downloadHtml" class="btn small">Download (.html)</button>
+      <label class="row small muted" style="gap:8px;">
+        <span>Light</span>
+        <input id="themeToggle" type="checkbox" />
+        <span class="pill">Theme</span>
+      </label>
+      <label class="row small muted" style="gap:8px;">
+        <span>Debug</span>
+        <input id="debugToggle" type="checkbox" />
+        <span class="pill">Show</span>
+      </label>
+    </div>
+  </header>
 
-      <div class="row">
-        <div class="field"><span class="label">ROIC</span><span id="roicOut" class="out">—</span></div>
-        <div class="field"><span class="label">Cumulative Growth (4y)</span><span id="cumOut" class="out">—</span></div>
-      </div>
+  <div id="alerts" class="alerts"></div>
 
-      <div class="kvs">
-        <span id="growthClass" class="pill">Growth Class: —</span>
-        <span id="spreadPill" class="pill">Spread (ROIC – WACC): —</span>
-      </div>
-
-      <div class="row">
-        <div class="field">
-          <label class="label" for="wacc">WACC (%)</label>
-          <input id="wacc" type="number" step="0.01" placeholder="e.g., 10">
+  <div class="container">
+    <details class="card" id="helpCard">
+      <summary><strong>Help</strong> <span class="small muted">How to use, meanings, and tips</span></summary>
+      <div class="grid" style="grid-template-columns: 1fr; gap:10px; margin-top:8px;">
+        <div>
+          <label>Workflow</label>
+          <ul style="margin:6px 0 0 18px">
+            <li>Enter a ticker and your API key(s). Keys are hidden; toggle the eye icon to view.</li>
+            <li>Click Fetch via Finnhub or Fetch via FMP to auto-fill current and prior year fields.</li>
+            <li>Fill any missing inputs manually. Red highlights show blanks.</li>
+            <li>Press Compute All to update F‑Score, ROIC, Growth, and the Composite Verdict.</li>
+          </ul>
+        </div>
+        <div>
+          <label>Piotroski F‑Score (0–9)</label>
+          <p class="small muted">Nine binary checks. 1 point per pass; 0 if fail; — if missing.</p>
+          <ul style="margin:6px 0 0 18px">
+            <li>Profitability: ROA &gt; 0; CFO &gt; 0; ΔROA &gt; 0; Accruals: CFO &gt; NI.</li>
+            <li>Leverage/Liquidity: LT Debt / Assets decreases; Current Ratio increases; No new shares (sh0 ≤ sh1).</li>
+            <li>Operating efficiency: Gross Margin increases; Asset Turnover increases.</li>
+            <li>Reading the score: 0–3 weak, 4–6 average, 7–9 strong.</li>
+          </ul>
+        </div>
+        <div>
+          <label>ROIC</label>
+          <p class="small muted">ROIC ≈ NOPAT / Invested Capital, using operating capital items. Positive spread over WACC suggests value creation.</p>
+        </div>
+        <div>
+          <label>Growth</label>
+          <p class="small muted">Cumulative 4‑year growth from user/API YoY % values. Classes: Poor (&lt;25), Below avg (25–29), Acceptable (30–49), Decent (50–59), Strong (60–79), Excellent (80–120), Outlier (&gt;120).</p>
+        </div>
+        <div>
+          <label>Composite Verdict</label>
+          <ul style="margin:6px 0 0 18px">
+            <li>Combines F‑Score, ROIC−WACC spread, and Growth class.</li>
+            <li>Requires WACC to judge value creation (spread).</li>
+            <li>Outputs a plain‑English verdict and reasons.</li>
+          </ul>
+        </div>
+        <div class="small muted">
+          Tips: If APIs block file:// requests, run a local server (python -m http.server). Use notes on each field to record assumptions and sources.
         </div>
       </div>
+    </details>
 
-      <div class="note" id="notes">Enter a WACC to see value creation or destruction.</div>
+    <div class="grid grid-cols-2">
+    <!-- LEFT: Inputs & Fetch -->
+    <section class="card">
+      <div class="row">
+        <label for="ticker">Ticker</label>
+        <span class="help">what is this?
+          <span class="popover">Enter a 1–5 letter ticker symbol (e.g., AAPL, MSFT, GOOG). Uppercase A–Z.</span>
+        </span>
+      </div>
+      <input id="ticker" class="input round mono" maxlength="5" placeholder="e.g., AAPL" pattern="[A-Z]{1,5}" />
+
+      <div style="height:12px"></div>
+      <div class="row"><span class="tag">Data Sources</span></div>
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap:12px;">
+        <div class="card" style="padding:12px;">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Finnhub</strong>
+            <a class="small" href="https://finnhub.io" target="_blank" rel="noopener">Get key</a>
+          </div>
+          <label class="small muted" for="finnhubKey">API Key</label>
+          <div class="row" style="gap:8px;"><input id="finnhubKey" type="password" class="input mono" placeholder="FINNHUB_API_KEY" /><button class="btn small" id="toggleFinnhubKey" title="Show/Hide">👁</button></div>
+          <div style="height:8px"></div>
+          <button class="btn" id="btnFinnhub">Fetch via Finnhub</button>
+          <p class="small muted">Primary: financials-reported; Optional: metric for shares.</p>
+        </div>
+
+        <div class="card" style="padding:12px;">
+          <div class="row" style="justify-content:space-between;">
+            <strong>FMP</strong>
+            <a class="small" href="https://site.financialmodelingprep.com/developer" target="_blank" rel="noopener">Get key</a>
+          </div>
+          <label class="small muted" for="fmpKey">API Key</label>
+          <div class="row" style="gap:8px;"><input id="fmpKey" type="password" class="input mono" placeholder="FMP_API_KEY" /><button class="btn small" id="toggleFmpKey" title="Show/Hide">👁</button></div>
+          <div style="height:8px"></div>
+          <button class="btn" id="btnFmp">Fetch via FMP</button>
+          <p class="small muted">Quiet build: marks missing as manual.</p>
+        </div>
+      </div>
+	<div style="height:12px"></div>
+		<button class="btn" id="btnSec">Fetch via SEC</button>
+		<p class="small muted">Direct from SEC via your Vercel proxy.</p>
+		<div style="height:12px"></div>
+
+      <!-- Unified Inputs -->
+      <details open class="card">
+        <summary><strong>Unified Inputs</strong> <span class="small muted">(auto-fill or manual; reused across all metrics)</span></summary>
+        <div class="fieldset"><div class="uni-grid">
+    <div class="uni-row">
+      <label>Revenue / Sales</label>
+      <div class="note-wrap">
+        <input id="rev0" class="input mono" placeholder="current year" />
+        <span class="note-toggle" data-for="note_rev0">note</span>
+        <div class="note-box" id="note_rev0_box"><div class="note-head">Revenue / Sales note</div><textarea id="note_rev0"></textarea></div>
+      </div>
+    
+      
+      <div>
+        <input id="rev1" class="input mono" placeholder="last year" />
+      </div>
+    
+    </div>
+
+    <div class="uni-row">
+      <label>Gross Profit</label>
+      <div class="note-wrap">
+        <input id="gp0" class="input mono" placeholder="current year" />
+        <span class="note-toggle" data-for="note_gp0">note</span>
+        <div class="note-box" id="note_gp0_box"><div class="note-head">Gross Profit note</div><textarea id="note_gp0"></textarea></div>
+      </div>
+    
+      
+      <div>
+        <input id="gp1" class="input mono" placeholder="last year" />
+      </div>
+    
+    </div>
+
+    <div class="uni-row">
+      <label>Total Assets</label>
+      <div class="note-wrap">
+        <input id="assets0" class="input mono" placeholder="current year" />
+        <span class="note-toggle" data-for="note_assets0">note</span>
+        <div class="note-box" id="note_assets0_box"><div class="note-head">Total Assets note</div><textarea id="note_assets0"></textarea></div>
+      </div>
+    
+      
+      <div>
+        <input id="assets1" class="input mono" placeholder="last year" />
+      </div>
+    
+    </div>
+
+    <div class="uni-row">
+      <label>Net Income</label>
+      <div class="note-wrap">
+        <input id="ni0" class="input mono" placeholder="current year" />
+        <span class="note-toggle" data-for="note_ni0">note</span>
+        <div class="note-box" id="note_ni0_box"><div class="note-head">Net Income note</div><textarea id="note_ni0"></textarea></div>
+      </div>
+    
+      
+      <div>
+        <input id="ni1" class="input mono" placeholder="last year" />
+      </div>
+    
+    </div>
+
+    <div class="uni-row">
+      <label>Operating Cash Flow (CFO)</label>
+      <div class="note-wrap">
+        <input id="cfo0" class="input mono" placeholder="current year" />
+        <span class="note-toggle" data-for="note_cfo0">note</span>
+        <div class="note-box" id="note_cfo0_box"><div class="note-head">Operating Cash Flow (CFO) note</div><textarea id="note_cfo0"></textarea></div>
+      </div>
+    
+      
+      <div>
+        <input id="cfo1" class="input mono" placeholder="last year" />
+      </div>
+    
+    </div>
+
+    <div class="uni-row">
+      <label>Long-term Debt</label>
+      <div class="note-wrap">
+        <input id="ltd0" class="input mono" placeholder="current year" />
+        <span class="note-toggle" data-for="note_ltd0">note</span>
+        <div class="note-box" id="note_ltd0_box"><div class="note-head">Long-term Debt note</div><textarea id="note_ltd0"></textarea></div>
+      </div>
+    
+      
+      <div>
+        <input id="ltd1" class="input mono" placeholder="last year" />
+      </div>
+    
+    </div>
+
+    <div class="uni-row">
+      <label>Current Assets</label>
+      <div class="note-wrap">
+        <input id="ca0" class="input mono" placeholder="current year" />
+        <span class="note-toggle" data-for="note_ca0">note</span>
+        <div class="note-box" id="note_ca0_box"><div class="note-head">Current Assets note</div><textarea id="note_ca0"></textarea></div>
+      </div>
+    
+      
+      <div>
+        <input id="ca1" class="input mono" placeholder="last year" />
+      </div>
+    
+    </div>
+
+    <div class="uni-row">
+      <label>Current Liabilities</label>
+      <div class="note-wrap">
+        <input id="cl0" class="input mono" placeholder="current year" />
+        <span class="note-toggle" data-for="note_cl0">note</span>
+        <div class="note-box" id="note_cl0_box"><div class="note-head">Current Liabilities note</div><textarea id="note_cl0"></textarea></div>
+      </div>
+    
+      
+      <div>
+        <input id="cl1" class="input mono" placeholder="last year" />
+      </div>
+    
+    </div>
+
+    <div class="uni-row">
+      <label>Shares Outstanding (weighted avg)</label>
+      <div class="note-wrap">
+        <input id="sh0" class="input mono" placeholder="current year" />
+        <span class="note-toggle" data-for="note_sh0">note</span>
+        <div class="note-box" id="note_sh0_box"><div class="note-head">Shares Outstanding (weighted avg) note</div><textarea id="note_sh0"></textarea></div>
+      </div>
+    
+      
+      <div>
+        <input id="sh1" class="input mono" placeholder="last year" />
+      </div>
+    
+    </div>
+</div>
+<div class="full"><h4>Additional (for ROIC / Debt / Margins / Growth)</h4></div>
+          <div class="note-wrap">
+            <label>EBIT</label>
+            <input id="ebit" class="input mono" placeholder="e.g., 1254" />
+            <span class="note-toggle" data-for="note_ebit">note</span>
+            <div class="note-box" id="note_ebit_box"><div class="note-head">EBIT note</div><textarea id="note_ebit"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>EBITDA</label>
+            <input id="ebitda" class="input mono" placeholder="e.g., 1571" />
+            <span class="note-toggle" data-for="note_ebitda">note</span>
+            <div class="note-box" id="note_ebitda_box"><div class="note-head">EBITDA note</div><textarea id="note_ebitda"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Income Tax</label>
+            <input id="tax" class="input mono" placeholder="e.g., 152" />
+            <span class="note-toggle" data-for="note_tax">note</span>
+            <div class="note-box" id="note_tax_box"><div class="note-head">Income Tax note</div><textarea id="note_tax"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Cash & Equivalents</label>
+            <input id="cash" class="input mono" placeholder="e.g., 471" />
+            <span class="note-toggle" data-for="note_cash">note</span>
+            <div class="note-box" id="note_cash_box"><div class="note-head">Cash & Equivalents note</div><textarea id="note_cash"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Short-term Debt</label>
+            <input id="std" class="input mono" placeholder="e.g., 0" />
+            <span class="note-toggle" data-for="note_std">note</span>
+            <div class="note-box" id="note_std_box"><div class="note-head">Short-term Debt note</div><textarea id="note_std"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Current Portion of LT Debt</label>
+            <input id="cpltd" class="input mono" placeholder="e.g., 307" />
+            <span class="note-toggle" data-for="note_cpltd">note</span>
+            <div class="note-box" id="note_cpltd_box"><div class="note-head">CPLTD note</div><textarea id="note_cpltd"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Term Debt</label>
+            <input id="termdebt" class="input mono" placeholder="e.g., 0" />
+            <span class="note-toggle" data-for="note_termdebt">note</span>
+            <div class="note-box" id="note_termdebt_box"><div class="note-head">Term Debt note</div><textarea id="note_termdebt"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Common Stock</label>
+            <input id="cs" class="input mono" placeholder="e.g., 181" />
+            <span class="note-toggle" data-for="note_cs">note</span>
+            <div class="note-box" id="note_cs_box"><div class="note-head">Common Stock note</div><textarea id="note_cs"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Capital Surplus</label>
+            <input id="cap" class="input mono" placeholder="e.g., 2189" />
+            <span class="note-toggle" data-for="note_cap">note</span>
+            <div class="note-box" id="note_cap_box"><div class="note-head">Capital Surplus note</div><textarea id="note_cap"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Retained Earnings</label>
+            <input id="re" class="input mono" placeholder="e.g., 9635" />
+            <span class="note-toggle" data-for="note_re">note</span>
+            <div class="note-box" id="note_re_box"><div class="note-head">Retained Earnings note</div><textarea id="note_re"></textarea></div>
+          </div>
+
+          <div class="note-wrap">
+            <label>Revenue Growth % (Y1)</label>
+            <input id="r1" class="input mono" placeholder="e.g., 10" />
+            <span class="note-toggle" data-for="note_r1">note</span>
+            <div class="note-box" id="note_r1_box"><div class="note-head">Growth Y1 note</div><textarea id="note_r1"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Revenue Growth % (Y2)</label>
+            <input id="r2" class="input mono" placeholder="e.g., 12" />
+            <span class="note-toggle" data-for="note_r2">note</span>
+            <div class="note-box" id="note_r2_box"><div class="note-head">Growth Y2 note</div><textarea id="note_r2"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Revenue Growth % (Y3)</label>
+            <input id="r3" class="input mono" placeholder="e.g., 8" />
+            <span class="note-toggle" data-for="note_r3">note</span>
+            <div class="note-box" id="note_r3_box"><div class="note-head">Growth Y3 note</div><textarea id="note_r3"></textarea></div>
+          </div>
+          <div class="note-wrap">
+            <label>Revenue Growth % (Y4)</label>
+            <input id="r4" class="input mono" placeholder="e.g., 6" />
+            <span class="note-toggle" data-for="note_r4">note</span>
+            <div class="note-box" id="note_r4_box"><div class="note-head">Growth Y4 note</div><textarea id="note_r4"></textarea></div>
+          </div>
+        </div>
+      </details>
+
+      <div class="row" style="margin-top:12px; justify-content:space-between;">
+        <button class="btn" id="btnCompute">Compute All</button>
+        <span class="small muted">Blank fields are highlighted. Add notes via the “note” toggles.</span>
+      </div>
+    </section>
+
+    <!-- RIGHT: Results -->
+    <section class="card">
+      <div class="row" style="justify-content:space-between;">
+        <strong>F‑Score</strong>
+        <div class="small muted">9 criteria</div>
+      </div>
+      <div id="scoreBlock" class="kpi" style="margin-top:8px;">
+        <div>Total F‑Score</div>
+        <div class="score right" id="totalScore">— / 9</div>
+      </div>
+      <div style="height:8px"></div>
+      <div id="criteriaList" class="grid"></div>
+
+      <div style="height:16px"></div>
+      <div class="row" style="justify-content:space-between;">
+        <strong>Data Fill Status</strong>
+        <span class="small muted">Which API or method filled each field</span>
+      </div>
+      <div class="status-grid small muted" style="margin-top:6px; font-weight:600;">
+        <div>Field</div><div>Source</div><div>Value</div>
+      </div>
+      <div id="statusList" class="status-grid small" style="margin-top:2px;"></div>
+
+      <div class="footer small">ROIC uses operating capital only. Cash reused from Net‑Debt section if ROIC cash blank. © 2025 Kevin Shokrollahi ALL RIGHT RESERVED</div>
     </section>
 
     <section class="card">
-      <h2>Composite Verdict <span class="sub">F‑Score + ROIC vs WACC + Growth</span></h2>
-      <div class="field" style="margin-bottom:8px;">
-        <span class="big" id="verdict">Needs inputs</span>
+      <div class="row" style="justify-content:space-between;">
+        <strong>ROIC / Debt / Margins / Growth</strong>
+        <div class="small muted">Snapshot</div>
       </div>
 
-      <div class="row">
-        <div class="field"><span class="label">F‑Score</span><span id="fscoreOut" class="out">—</span></div>
-        <div class="field"><span class="label">ROIC – WACC</span><span id="spreadOut" class="out">—</span></div>
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap:12px; margin-top:8px;">
+        <div class="kpi"><div>EBIT Margin</div><div class="right" id="ebitMarginOut">—</div></div>
+        <div class="kpi"><div>Net‑Debt / EBITDA</div><div class="right" id="ndebtOut">—</div></div>
+        <div class="kpi"><div>ROIC</div><div class="right" id="roicOut">—</div></div>
+        <div class="kpi"><div>Cumulative Growth (4y)</div><div class="right" id="cumOut">—</div></div>
       </div>
 
-      <div class="row">
-        <div class="field"><span class="label">Growth Class</span><span id="growthClass2" class="out">—</span></div>
-        <div class="field"><span class="label">Cumulative Growth (4y)</span><span id="cumOut2" class="out">—</span></div>
+      <div class="row" style="margin-top:10px; gap:8px;">
+        <span class="chip">Growth Class: <span id="growthClass">—</span></span>
+        <span class="chip" id="valueFlag">—</span>
+        <span class="chip">Spread (ROIC − WACC): <span id="spread">—</span></span>
       </div>
 
-      <div class="note" id="reason">Fetch or fill fields, enter WACC, then press Compute.</div>
+      <div class="row" style="margin-top:10px;">
+        <label for="wacc">WACC (%)</label>
+        <input id="wacc" class="input mono" style="max-width:200px" placeholder="e.g., 10" />
+      </div>
+
+      <div style="margin-top:14px" class="kpi na">
+        <div>Notes</div>
+        <div class="right" id="notes">Enter a WACC to see value creation or destruction.</div>
+      </div>
     </section>
 
-    <section class="card" id="inputs">
-      <h2>Inputs</h2>
-      <div class="grid">
-        <div>
-          <div class="row-3">
-            <div>
-              <label class="label">Revenue (current)</label>
-              <input id="rev0" type="number" step="0.01" placeholder="e.g., 2866 (USD m)">
-            </div>
-            <div>
-              <label class="label">Revenue (4y ago)</label>
-              <input id="rev4" type="number" step="0.01" placeholder="e.g., 1100">
-            </div>
-            <div>
-              <label class="label">EBIT</label>
-              <input id="ebit" type="number" step="0.01" placeholder="e.g., 310.4">
-            </div>
-          </div>
-          <div class="row-3" style="margin-top:8px">
-            <div>
-              <label class="label">EBITDA</label>
-              <input id="ebitda" type="number" step="0.01" placeholder="e.g., 342">
-            </div>
-            <div>
-              <label class="label">Income Tax</label>
-              <input id="tax" type="number" step="0.01" placeholder="e.g., 20">
-            </div>
-            <div>
-              <label class="label">Cash & Equivalents</label>
-              <input id="cash" type="number" step="0.01" placeholder="e.g., 5200">
-            </div>
-          </div>
-        </div>
-        <div>
-          <div class="row-3">
-            <div>
-              <label class="label">Short‑term Debt</label>
-              <input id="std" type="number" step="0.01" placeholder="0">
-            </div>
-            <div>
-              <label class="label">Current Portion LT Debt</label>
-              <input id="cpltd" type="number" step="0.01" placeholder="0">
-            </div>
-            <div>
-              <label class="label">Long‑term Debt</label>
-              <input id="ltd0" type="number" step="0.01" placeholder="0">
-            </div>
-          </div>
-          <div class="row-3" style="margin-top:8px">
-            <div>
-              <label class="label">Term Debt (alt field)</label>
-              <input id="termdebt" type="number" step="0.01" placeholder="0">
-            </div>
-            <div>
-              <label class="label">Total Assets</label>
-              <input id="assets0" type="number" step="0.01" placeholder="e.g., 7000">
-            </div>
-            <div>
-              <label class="label">Current Liabilities</label>
-              <input id="cl0" type="number" step="0.01" placeholder="e.g., 1400">
-            </div>
-          </div>
-        </div>
+    <section class="card" id="verdictCard">
+      <div class="row" style="justify-content:space-between;">
+        <strong>Composite Verdict</strong>
+        <div class="small muted">F‑Score + ROIC vs WACC + Growth</div>
       </div>
-
-      <div class="btns" style="margin-top:12px">
-        <button id="compute">Compute All</button>
-        <button id="reset">Reset</button>
-        <div class="sub">Enter numbers in USD millions or consistent units.</div>
+      <div class="kpi" id="verdictBadge" style="margin-top:8px;">
+        <div id="verdictLabel">—</div>
+        <div class="right" id="verdictEmoji">—</div>
+      </div>
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap:10px; margin-top:8px;">
+        <div class="kpi"><div>F‑Score</div><div class="right" id="vFscore">—</div></div>
+        <div class="kpi"><div>ROIC − WACC</div><div class="right" id="vSpread">—</div></div>
+        <div class="kpi"><div>Growth Class</div><div class="right" id="vGrowthClass">—</div></div>
+        <div class="kpi"><div>Cumulative Growth (4y)</div><div class="right" id="vGrowthNum">—</div></div>
+      </div>
+      <div class="kpi na" style="margin-top:8px;">
+        <div>Reasoning</div>
+        <div class="right small" id="verdictReason">Provide WACC and compute to see the verdict.</div>
       </div>
     </section>
   </div>
 
 <script>
+  // Theme
+  const toggle = document.getElementById('themeToggle');
+  const body = document.body;
+  const applyTheme = (light) => { if (light) body.classList.add('light'); else body.classList.remove('light'); };
+  toggle.addEventListener('change', (e) => applyTheme(e.target.checked));
+
+  // Alerts (quiet)
+  const alertsEl = document.getElementById('alerts');
+  function showAlert(msg) {
+    const div = document.createElement('div');
+    div.className = 'alert warn';
+    div.textContent = msg;
+    alertsEl.appendChild(div);
+  }
+  if (location.protocol === 'file:') {
+    showAlert('APIs may block file:// requests. Serve over http(s) (e.g., python -m http.server).');
+  }
+
+  // Download current HTML
+  document.getElementById('downloadHtml').addEventListener('click', () => {
+    const blob = new Blob([document.documentElement.outerHTML], {type:'text/html'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'unified_stock_evaluator.html';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  });
+
   // Helpers
-  const g = id => document.getElementById(id);
-  const parseNum = v => {
-    if (v === null || v === undefined || v === '') return NaN;
-    const x = Number(v);
-    return Number.isFinite(x) ? x : NaN;
+  const g = (id) => document.getElementById(id);
+  const parseNum = (v) => {
+    if (v === null || v === undefined) return NaN;
+    if (typeof v === 'number') return v;
+    const s = (v+'').replace(/,/g,'').trim();
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : NaN;
   };
-  const fix = (v, p=2) => Number.isFinite(v) ? v.toFixed(p) : '—';
-  const pct = v => Number.isFinite(v) ? (v).toFixed(2) + '%' : '—';
+  const num = (id) => parseNum(g(id).value);
+  const setVal = (id, v) => { g(id).value = (v ?? '') + ''; };
+  const isEmpty = (id) => (g(id).value ?? '').toString().trim() === '';
 
-  function computeSnapshot(){
-    // Inputs
-    const Sales = parseNum(g('rev0').value);
-    const Sales4 = parseNum(g('rev4').value);
-    const EBIT = parseNum(g('ebit').value);
-    const EBITDA = parseNum(g('ebitda').value);
-    const tax = parseNum(g('tax').value);
-    const cash = parseNum(g('cash').value);
-    const std = parseNum(g('std').value);
-    const cpltd = parseNum(g('cpltd').value);
-    const ltd = parseNum(g('ltd0').value);
-    const termd = parseNum(g('termdebt').value);
-    const assets = parseNum(g('assets0').value);
-    const cl = parseNum(g('cl0').value);
-    const wacc = parseNum(g('wacc').value);
+  // Notes toggling + autosave
+  const NOTE_FIELDS = ['rev0','gp0','assets0','ni0','cfo0','ltd0','ca0','cl0','sh0','ebit','ebitda','tax','cash','std','cpltd','termdebt','cs','cap','re','r1','r2','r3','r4'];
+  function wireNotes(){
+    document.querySelectorAll('.note-toggle').forEach(el=>{
+      const target = el.getAttribute('data-for');
+      const box = document.getElementById(target + '_box');
+      el.addEventListener('click', ()=>{
+        box.style.display = (box.style.display === 'block') ? 'none' : 'block';
+      });
+    });
+    // Auto-save
+    [...NOTE_FIELDS].forEach(id=>{
+      const ta = document.getElementById('note_' + id);
+      if(!ta) return;
+      const key = 'unified_note_' + id;
+      const saved = localStorage.getItem(key);
+      if(saved !== null) ta.value = saved;
+      ta.addEventListener('input', ()=> localStorage.setItem(key, ta.value));
+    });
+  }
+  wireNotes();
 
-    // EBIT margin
-    const ebitMargin = (Number.isFinite(Sales) && Sales !== 0 && Number.isFinite(EBIT)) ? (EBIT / Sales) * 100 : NaN;
-    g('ebitMarginOut').textContent = pct(ebitMargin);
+  // Status rows
+  const FIELDS = [
+    ['rev0','Revenue (Current)'],['gp0','Gross Profit (Current)'],['assets0','Total Assets (Current)'],
+    ['ni0','Net Income (Current)'],['cfo0','CFO (Current)'],['ltd0','LT Debt (Current)'],
+    ['ca0','Current Assets (Current)'],['cl0','Current Liabilities (Current)'],['sh0','Shares (Current)'],
+    ['rev1','Revenue (Prior)'],['gp1','Gross Profit (Prior)'],['assets1','Total Assets (Prior)'],
+    ['ni1','Net Income (Prior)'],['cfo1','CFO (Prior)'],['ltd1','LT Debt (Prior)'],
+    ['ca1','Current Assets (Prior)'],['cl1','Current Liabilities (Prior)'],['sh1','Shares (Prior)'],
+    // Extras (show as manual if not filled by API)
+    ['ebit','EBIT'],['ebitda','EBITDA'],['tax','Income Tax'],['cash','Cash & Equivalents'],
+    ['std','Short-term Debt'],['cpltd','Current Portion of LT Debt'],['termdebt','Term Debt'],
+    ['cs','Common Stock'],['cap','Capital Surplus'],['re','Retained Earnings'],
+    ['r1','Revenue Growth % (Y1)'],['r2','Revenue Growth % (Y2)'],['r3','Revenue Growth % (Y3)'],['r4','Revenue Growth % (Y4)']
+  ];
+  const status = Object.fromEntries(FIELDS.map(([id]) => [id, {source: '', value: NaN}]));
 
-    // Net-debt / EBITDA  (pick one LT debt field to avoid double count)
-    const longDebt = Number.isFinite(ltd) ? ltd : (Number.isFinite(termd) ? termd : 0);
-    const netDebt = (Number.isFinite(std)?std:0) + (Number.isFinite(cpltd)?cpltd:0) + (Number.isFinite(longDebt)?longDebt:0) - (Number.isFinite(cash)?cash:0);
-    const ndRatio = (Number.isFinite(EBITDA) && EBITDA !== 0) ? (netDebt / EBITDA) : NaN;
-    g('ndebtOut').textContent = Number.isFinite(ndRatio) ? fix(ndRatio, 2) : '—';
+  // Aux for computed fallbacks
+  const AUX = { cor0: NaN, cor1: NaN, tdebt0: NaN, tdebt1: NaN };
+  let lastAttempt = '';
 
-    // ROIC using operating invested capital: Assets − Cash − NIBCL
-    const ibcl = (Number.isFinite(std)?std:0) + (Number.isFinite(cpltd)?cpltd:0);
-    const nibcl = Number.isFinite(cl) ? Math.max(0, cl - ibcl) : NaN;
-    const invested = (Number.isFinite(assets)?assets:NaN) - (Number.isFinite(cash)?cash:NaN) - (Number.isFinite(nibcl)?nibcl:NaN);
-    const NOPAT = (Number.isFinite(EBIT)?EBIT:NaN) - (Number.isFinite(tax)?tax:NaN);
-    const roic = (Number.isFinite(invested) && invested !== 0 && Number.isFinite(NOPAT)) ? (NOPAT / invested) * 100 : NaN;
-    g('roicOut').textContent = pct(roic);
-
-    // Growth (4y)
-    const growth = (Number.isFinite(Sales) && Number.isFinite(Sales4) && Sales4 !== 0) ? ((Sales / Sales4) - 1) * 100 : NaN;
-    g('cumOut').textContent = pct(growth);
-    g('cumOut2').textContent = pct(growth);
-
-    // Growth class (simple heuristic)
-    const gClass = Number.isFinite(growth) ? (growth >= 150 ? 'Outlier' : (growth >= 60 ? 'Strong' : (growth >= 20 ? 'Moderate' : 'Low'))) : '—';
-    g('growthClass').textContent = 'Growth Class: ' + gClass;
-    g('growthClass2').textContent = gClass;
-
-    // Spread and verdict
-    let spreadText = '—';
-    let verdict = 'Needs inputs';
-    let reason = 'Provide WACC and compute.';
-    if(Number.isFinite(roic) && Number.isFinite(wacc)){
-      const spread = roic - wacc;
-      spreadText = (spread>=0?'+':'') + spread.toFixed(2) + '%';
-      g('spreadOut').textContent = spreadText;
-      g('spreadPill').textContent = 'Spread (ROIC – WACC): ' + spreadText;
-
-      // Verdict rule
-      if (spread < 0){
-        verdict = 'Avoid for now';
-        reason = `F‑Score ${getFScoreText()} • Spread ${spreadText} (negative) • Growth ${pct(growth)}`;
-        g('notes').textContent = 'ROIC below WACC. Negative spread.';
-        g('spreadPill').className = 'pill bad';
-      } else {
-        verdict = 'Looks investable';
-        reason = `F‑Score ${getFScoreText()} • Spread ${spreadText} (positive) • Growth ${pct(growth)}`;
-        g('notes').textContent = 'ROIC above WACC. Positive spread.';
-        g('spreadPill').className = 'pill good';
+  function mark(id, source, value, opts={}) {
+    if (!isEmpty(id) && !opts.force) return;
+    const n = parseNum(value);
+    if (!Number.isNaN(n)) { setVal(id, n); status[id] = {source, value:n}; }
+  }
+  function ensureComputedFallbacks() {
+    // GP = Revenue - COR if needed
+    const tryGP = (gpId, revId, cor) => {
+      const gp = num(gpId), rev = num(revId);
+      if (!Number.isFinite(gp) && Number.isFinite(rev) && Number.isFinite(cor)) {
+        const val = rev - cor;
+        setVal(gpId, val);
+        status[gpId] = {source:'Computed', value: val};
       }
+    };
+    tryGP('gp0','rev0',AUX.cor0);
+    tryGP('gp1','rev1',AUX.cor1);
+
+    // LT Debt from total debt if needed
+    const tryLTD = (ltdId, tdebt) => {
+      const ltd = num(ltdId);
+      if (!Number.isFinite(ltd) && Number.isFinite(tdebt)) {
+        setVal(ltdId, tdebt);
+        status[ltdId] = {source:'Computed (from totalDebt)', value:tdebt};
+      }
+    };
+    tryLTD('ltd0',AUX.tdebt0);
+    tryLTD('ltd1',AUX.tdebt1);
+  }
+  function finalizeStatusAfterFetch() {
+    if (!lastAttempt) return;
+    for (const [id] of FIELDS) {
+      const v = g(id).value;
+      const has = v !== '' && Number.isFinite(parseNum(v));
+      if (!has) { status[id] = {source:'manual input required', value: '—'}; }
+    }
+    renderStatus();
+  }
+  function renderStatus() {
+    const el = g('statusList');
+    el.innerHTML = '';
+    for (const [id, label] of FIELDS) {
+      const st = status[id];
+      const val = Number.isFinite(parseNum(st.value)) ? st.value : '—';
+      let pillClass = 'pill warn';
+      if (st.source === 'FMP' || st.source?.startsWith('Finnhub') || st.source === 'Computed' || st.source?.startsWith('Computed')) pillClass = 'pill ok';
+      if (st.source === 'manual input required' || st.source === 'manual input') pillClass = 'pill bad';
+      const row = document.createElement('div');
+      row.className = 'status-grid';
+      row.innerHTML = `
+        <div>${label}</div>
+        <div><span class="${pillClass}">${st.source || '—'}</span></div>
+        <div class="mono">${Number.isFinite(parseNum(val)) ? new Intl.NumberFormat('en-US', {maximumFractionDigits:2}).format(val) : '—'}</div>
+      `;
+      el.appendChild(row);
+    }
+  }
+
+  // F-Score compute
+  function fmt(x) {
+    if (x === undefined || x === null || isNaN(x)) return '—';
+    if (Math.abs(x) >= 1000) return new Intl.NumberFormat('en-US', {maximumFractionDigits:2}).format(x);
+    return (Math.abs(x) >= 1 ? x.toFixed(2) : x.toExponential(2));
+  }
+  function computeFScore(){
+    const rev0 = num('rev0'), rev1 = num('rev1');
+    const gp0 = num('gp0'), gp1 = num('gp1');
+    const assets0 = num('assets0'), assets1 = num('assets1');
+    const ni0 = num('ni0'), ni1 = num('ni1');
+    const cfo0 = num('cfo0'), cfo1 = num('cfo1');
+    const ltd0 = num('ltd0'), ltd1 = num('ltd1');
+    const ca0 = num('ca0'), ca1 = num('ca1');
+    const cl0 = num('cl0'), cl1 = num('cl1');
+    const sh0 = num('sh0'), sh1 = num('sh1');
+    const have = (x) => Number.isFinite(x);
+
+    const roa = have(assets0) ? ni0 / assets0 : NaN;
+    const roa1 = have(assets1) ? ni1 / assets1 : NaN;
+    const gm0 = have(rev0) && have(gp0) ? gp0 / rev0 : NaN;
+    const gm1 = have(rev1) && have(gp1) ? gp1 / rev1 : NaN;
+    const at0 = have(assets0) && have(rev0) ? rev0 / assets0 : NaN;
+    const at1 = have(assets1) && have(rev1) ? rev1 / assets1 : NaN;
+    const lvr0 = have(assets0) ? (have(ltd0) ? ltd0 : 0) / assets0 : NaN;
+    const lvr1 = have(assets1) ? (have(ltd1) ? ltd1 : 0) / assets1 : NaN;
+    const cr0 = have(cl0) && have(ca0) ? ca0 / cl0 : NaN;
+    const cr1 = have(cl1) && have(ca1) ? ca1 / cl1 : NaN;
+
+    const results = {
+      roa, roa1, gm0, gm1, at0, at1, lvr0, lvr1, cr0, cr1,
+      cfo0, ni0, sh0, sh1,
+      roaPos: have(roa) ? roa > 0 : null,
+      cfoPos: have(cfo0) ? cfo0 > 0 : null,
+      deltaRoa: (have(roa) && have(roa1)) ? (roa - roa1) > 0 : null,
+      accruals: (have(cfo0) && have(ni0)) ? cfo0 > ni0 : null,
+      leverageDown: (have(lvr0) && have(lvr1)) ? (lvr0 - lvr1) < 0 : null,
+      crUp: (have(cr0) && have(cr1)) ? (cr0 - cr1) > 0 : null,
+      noNewShares: (have(sh0) && have(sh1)) ? (sh0 <= sh1) : null,
+      gmUp: (have(gm0) && have(gm1)) ? (gm0 - gm1) > 0 : null,
+      atUp: (have(at0) && have(at1)) ? (at0 - at1) > 0 : null,
+    };
+    renderCriteria(results);
+  }
+  function renderCriteria(results) {
+    const list = g('criteriaList');
+    list.innerHTML = '';
+    let score = 0;
+    const rows = [
+      ['ROA > 0', results.roaPos, `ROA ${fmt(results.roa)} (NI/Assets)`],
+      ['CFO > 0', results.cfoPos, `CFO ${fmt(results.cfo0)}`],
+      ['ΔROA > 0', results.deltaRoa, `ΔROA ${fmt(results.roa - results.roa1)}`],
+      ['Accruals (CFO > NI)', results.accruals, `CFO ${fmt(results.cfo0)} vs NI ${fmt(results.ni0)}`],
+      ['Leverage down', results.leverageDown, `LT Debt/Assets ${fmt(results.lvr1)} → ${fmt(results.lvr0)} (prior → current)`],
+      ['Current ratio up', results.crUp, `CR ${fmt(results.cr1)} → ${fmt(results.cr0)} (prior → current)`],
+      ['No new shares', results.noNewShares, `Shares ${fmt(results.sh1)} → ${fmt(results.sh0)} (prior → current)`],
+      ['Gross margin up', results.gmUp, `GM ${fmt(results.gm1)} → ${fmt(results.gm0)} (prior → current)`],
+      ['Asset turnover up', results.atUp, `AT ${fmt(results.at1)} → ${fmt(results.at0)} (prior → current)`],
+    ];
+    for (const [name, ok, note] of rows) {
+      let klass = 'kpi bad';
+      let point = '0';
+      if (ok === true) { klass = 'kpi good'; point = '1'; score += 1; }
+      if (ok === null) { klass = 'kpi na'; point = '—'; }
+      const div = document.createElement('div');
+      div.className = klass;
+      div.innerHTML = `<div>${name}</div><div class="right">${point}</div><div class="small muted" style="grid-column:1 / -1">${note}</div>`;
+      list.appendChild(div);
+    }
+    document.getElementById('totalScore').textContent = score + ' / 9';
+  }
+
+  // ROIC / Debt / Margins / Growth compute
+  function pct(n){ return (isFinite(n) ? n : 0).toFixed(2) + '%'; }
+  function fix(n, d=2){ return (isFinite(n) ? n : 0).toFixed(d); }
+  function classifyGrowth(p){
+    if (p < 25) return 'Poor';
+    if (p >= 25 && p < 30) return 'Below average';
+    if (p >= 30 && p < 50) return 'Acceptable';
+    if (p >= 50 && p < 60) return 'Decent';
+    if (p >= 60 && p < 80) return 'Strong';
+    if (p >= 80 && p <= 120) return 'Excellent';
+    return (p > 120) ? 'Outlier' : '—';
+  }
+function computeSnapshot(){
+  // pull inputs
+  const Sales   = parseNum(g('rev0').value);
+  const Sales4  = parseNum(g('rev4').value);
+  const EBIT    = parseNum(g('ebit').value);
+  const EBITDA  = parseNum(g('ebitda').value);
+  const tax     = parseNum(g('tax').value);
+  const cash    = parseNum(g('cash').value);
+
+  const std     = parseNum(g('std').value);       // short-term debt
+  const cpltd   = parseNum(g('cpltd').value);     // current portion LT debt
+  const ltd     = parseNum(g('ltd0').value);      // long-term debt (field 1)
+  const termd   = parseNum(g('termdebt').value);  // long-term debt (alt field)
+  const assets  = parseNum(g('assets0').value);   // total assets
+  const cl      = parseNum(g('cl0').value);       // current liabilities
+
+  const wacc    = parseNum(g('wacc').value);
+
+  // 1) EBIT margin (%)
+  const ebitMargin =
+    Number.isFinite(Sales) && Sales !== 0 && Number.isFinite(EBIT)
+      ? (EBIT / Sales) * 100
+      : NaN;
+  g('ebitMarginOut').textContent = pct(ebitMargin);
+
+  // 2) Net-Debt / EBITDA  (avoid LT-debt double counting)
+  const longDebt = Number.isFinite(ltd) ? ltd : (Number.isFinite(termd) ? termd : 0);
+  const netDebt  =
+    (Number.isFinite(std)   ? std   : 0) +
+    (Number.isFinite(cpltd) ? cpltd : 0) +
+    (Number.isFinite(longDebt) ? longDebt : 0) -
+    (Number.isFinite(cash)  ? cash  : 0);
+
+  const ndRatio =
+    Number.isFinite(EBITDA) && EBITDA !== 0 ? (netDebt / EBITDA) : NaN;
+  g('ndebtOut').textContent = Number.isFinite(ndRatio) ? fix(ndRatio, 2) : '—';
+
+  // 3) ROIC = NOPAT / Invested Capital
+  // Invested ≈ Assets − Cash − NIBCL, where NIBCL ≈ CL − interest-bearing CL
+  const ibcl   = (Number.isFinite(std) ? std : 0) + (Number.isFinite(cpltd) ? cpltd : 0);
+  const nibcl  = Number.isFinite(cl) ? Math.max(0, cl - ibcl) : 0;
+
+  const NOPAT     =
+    (Number.isFinite(EBIT) ? EBIT : NaN) - (Number.isFinite(tax) ? tax : NaN);
+  const invested  =
+    (Number.isFinite(assets) ? assets : NaN) -
+    (Number.isFinite(cash)   ? cash   : NaN) -
+    nibcl;
+
+  const roic =
+    Number.isFinite(NOPAT) && Number.isFinite(invested) && invested !== 0
+      ? (NOPAT / invested) * 100
+      : NaN;
+  g('roicOut').textContent = pct(roic);
+
+  // 4) Cumulative Growth (4y, %)
+  const growth =
+    Number.isFinite(Sales) && Number.isFinite(Sales4) && Sales4 !== 0
+      ? ((Sales / Sales4) - 1) * 100
+      : NaN;
+  g('cumOut').textContent  = pct(growth);
+  if (g('cumOut2')) g('cumOut2').textContent = pct(growth);
+
+  // Growth class (simple bands)
+  const gClass = Number.isFinite(growth)
+    ? (growth >= 150 ? 'Outlier' : (growth >= 60 ? 'Strong' : (growth >= 20 ? 'Moderate' : 'Low')))
+    : '—';
+  if (g('growthClass'))  g('growthClass').textContent  = 'Growth Class: ' + gClass;
+  if (g('growthClass2')) g('growthClass2').textContent = gClass;
+
+  // 5) Spread & verdict
+  let verdict = 'Needs inputs';
+  let reason  = 'Fetch or fill fields, enter WACC, then press Compute.';
+  if (Number.isFinite(roic) && Number.isFinite(wacc)) {
+    const spread = roic - wacc;
+    const spreadText = (spread >= 0 ? '+' : '') + spread.toFixed(2) + '%';
+
+    if (g('spreadOut'))  g('spreadOut').textContent = spreadText;
+    if (g('spreadPill')) {
+      g('spreadPill').textContent = 'Spread (ROIC – WACC): ' + spreadText;
+      g('spreadPill').className = 'pill ' + (spread < 0 ? 'bad' : 'good');
+    }
+
+    if (spread < 0) {
+      verdict = 'Avoid for now';
+      reason  = `Spread ${spreadText} (negative)` + (Number.isFinite(growth) ? ` • Growth ${pct(growth)}` : '');
+      if (g('notes')) g('notes').textContent = 'ROIC below WACC. Negative spread.';
     } else {
-      g('spreadOut').textContent = '—';
+      verdict = 'Looks investable';
+      reason  = `Spread ${spreadText} (positive)` + (Number.isFinite(growth) ? ` • Growth ${pct(growth)}` : '');
+      if (g('notes')) g('notes').textContent = 'ROIC above WACC. Positive spread.';
+    }
+  } else {
+    if (g('spreadOut'))  g('spreadOut').textContent = '—';
+    if (g('spreadPill')) {
       g('spreadPill').textContent = 'Spread (ROIC – WACC): —';
       g('spreadPill').className = 'pill';
     }
-    g('verdict').textContent = verdict;
-    g('reason').textContent = reason;
-
-    // Mirror F-score if present
-    g('fscoreOut').textContent = getFScoreText();
   }
+  if (g('verdict')) g('verdict').textContent = verdict;
+  if (g('reason'))  g('reason').textContent  = reason;
 
-  function getFScoreText(){
-    // Place-holder: if you calculate F-Score elsewhere, set g('fscoreOut') before compute.
-    const el = document.getElementById('fscoreInput');
-    if (el && el.value !== ''){
-      const n = Number(el.value);
-      if (Number.isFinite(n)) return n + ' / 9';
+  // leave F-Score logic/UI unchanged (shown elsewhere in your file)
+}
+
+
+  // Compute ALL + highlight missing
+  function computeAll(){
+    computeFScore();
+    computeSnapshot();
+    highlightMissing();
+    renderStatus();
+  }
+  function highlightMissing(){
+    document.querySelectorAll('.input').forEach(el => {
+      const v = (el.value||'').trim();
+      if (!v) el.classList.add('missing'); else el.classList.remove('missing');
+    });
+  }
+  document.getElementById('btnCompute').addEventListener('click', computeAll);
+  // Live updates for snapshot metrics
+  ['ebit','rev0','std','ltd0','cpltd','termdebt','cash','ebitda','tax','cs','cap','re','r1','r2','r3','r4','wacc'].forEach(id=>{
+    g(id).addEventListener('input', computeSnapshot);
+  });
+
+  // Safe fetch (quiet)
+  async function safeFetch(url) {
+    try { const r = await fetch(url); if (!r.ok) return { ok:false, res:r }; return { ok:true, res:r, json: await r.json() }; }
+    catch { return { ok:false, res:null }; }
+  }
+  function resetStatus() { for (const [id] of FIELDS) status[id] = {source:'', value: NaN}; renderStatus(); }
+
+  // FMP disabled handler replaced by debug-enabled handler
+// Finnhub fetch (financials-reported + shares metric)
+  document.getElementById('btnFinnhub').addEventListener('click', async () => {
+    const key = g('finnhubKey').value.trim();
+    let t = g('ticker').value.trim().toUpperCase();
+    g('ticker').value = t;
+    lastAttempt = 'Finnhub';
+    if (!/^[A-Z]{1,5}$/.test(t)) { showAlert('Ticker must be 1–5 uppercase letters.'); return; }
+    if (!key) { showAlert('Enter your Finnhub API key.'); return; }
+
+    resetStatus();
+    AUX.cor0 = AUX.cor1 = AUX.tdebt0 = AUX.tdebt1 = NaN;
+
+    const repQ = await safeFetch(`https://finnhub.io/api/v1/stock/financials-reported?symbol=${encodeURIComponent(t)}&freq=annual&token=${encodeURIComponent(key)}`);
+    function parseReported(rep) {
+      const ic = rep?.report?.ic || [];
+      const bs = rep?.report?.bs || [];
+      const cf = rep?.report?.cf || [];
+      const val = (arr, keys) => {
+        const lower = keys.map(k=>k.toLowerCase());
+        for (const x of arr) {
+          const c = (x.concept||'').toLowerCase(); const l = (x.label||'').toLowerCase();
+          if (lower.includes(c) || lower.some(k => l.includes(k))) {
+            if (typeof x.value === 'number') return x.value;
+          }
+        }
+        return undefined;
+      };
+      const revenue = val(ic, ['Revenues','RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenue']);
+      const costOfRevenue = val(ic, ['CostOfRevenue','CostOfGoodsAndServicesSold']);
+      const grossProfit = val(ic, ['GrossProfit','GrossProfitLoss']);
+      const netIncome = val(ic, ['NetIncomeLoss','ProfitLoss']);
+      const totalAssets = val(bs, ['Assets','AssetsCurrentAndNoncurrent']);
+      const currentAssets = val(bs, ['AssetsCurrent']);
+      const currentLiabilities = val(bs, ['LiabilitiesCurrent']);
+      const longTermDebt = val(bs, ['LongTermDebtNoncurrent','LongTermDebtAndCapitalLeaseObligations','LongTermDebt']);
+      const totalDebt = val(bs, ['DebtSecurities','Debt','LongTermDebtAndCapitalLeaseObligations','LongTermDebt']);
+      const cfo = val(cf, ['NetCashProvidedByUsedInOperatingActivities','NetCashProvidedByUsedInOperatingActivitiesContinuingOperations']);
+      const shares = val(ic, ['WeightedAverageNumberOfDilutedSharesOutstanding','WeightedAverageNumberOfSharesOutstandingBasic','WeightedAverageNumberOfSharesOutstanding']);
+      return { revenue, costOfRevenue, grossProfit, netIncome, totalAssets, currentAssets, currentLiabilities, longTermDebt, totalDebt, cfo, shares };
     }
-    return '—';
+    if (repQ.ok) {
+      const reps = (repQ.json?.data || []).slice().sort((a,b)=> (b.fiscalYear||0) - (a.fiscalYear||0));
+      if (reps.length >= 1) {
+        const cur = parseReported(reps[0]);
+        mark('rev0','Finnhub',cur.revenue);
+        mark('gp0','Finnhub',cur.grossProfit);
+        mark('assets0','Finnhub',cur.totalAssets);
+        mark('ni0','Finnhub',cur.netIncome);
+        mark('cfo0','Finnhub',cur.cfo);
+        mark('ltd0','Finnhub',cur.longTermDebt);
+        mark('ca0','Finnhub',cur.currentAssets);
+        mark('cl0','Finnhub',cur.currentLiabilities);
+        mark('sh0','Finnhub',cur.shares);
+        AUX.cor0 = parseNum(cur.costOfRevenue);
+        AUX.tdebt0 = parseNum(cur.totalDebt);
+      }
+      if (reps.length >= 2) {
+        const prev = parseReported(reps[1]);
+        mark('rev1','Finnhub',prev.revenue);
+        mark('gp1','Finnhub',prev.grossProfit);
+        mark('assets1','Finnhub',prev.totalAssets);
+        mark('ni1','Finnhub',prev.netIncome);
+        mark('cfo1','Finnhub',prev.cfo);
+        mark('ltd1','Finnhub',prev.longTermDebt);
+        mark('ca1','Finnhub',prev.currentAssets);
+        mark('cl1','Finnhub',prev.currentLiabilities);
+        mark('sh1','Finnhub',prev.shares);
+        AUX.cor1 = parseNum(prev.costOfRevenue);
+        AUX.tdebt1 = parseNum(prev.totalDebt);
+      }
+    }
+    if (isEmpty('sh0')) {
+      const m = await safeFetch(`https://finnhub.io/api/v1/stock/metric?symbol=${encodeURIComponent(t)}&metric=all&token=${encodeURIComponent(key)}`);
+      if (m.ok) {
+        const so = m.json?.metric?.shareOutstanding;
+        if (Number.isFinite(parseNum(so))) mark('sh0','Finnhub (metric: point-in-time)',so);
+      }
+    }
+    ensureComputedFallbacks();
+    finalizeStatusAfterFetch();
+    computeAll();
+  });
+
+// ===== FMP DEBUG/Fetcher (auto-injected) =====
+const FMP_BASE = 'https://financialmodelingprep.com/stable';
+
+function addRow(tbody, cellsHtml){
+  const tr = document.createElement('tr'); tr.innerHTML = cellsHtml; tbody.appendChild(tr);
+}
+function fmtNum(n){
+  const v = parseNum(n); return Number.isFinite(v) ? new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(v) : '—';
+}
+async function fmpFetch(url){
+  try{
+    const res = await fetch(url);
+    const text = await res.text();
+    let json = null; try { json = JSON.parse(text); } catch {}
+    return { ok: res.ok, status: res.status, url, headers: Object.fromEntries(res.headers.entries()), json, text };
+  }catch(e){ return { ok:false, status:0, url, headers:{}, json:null, text:String(e||'fetch error') }; }
+}
+function fmpBuildUrls(t, key){
+  const qs = `symbol=${encodeURIComponent(t)}&period=annual&limit=6&apikey=${encodeURIComponent(key)}`;
+  return {
+    income: `${FMP_BASE}/income-statement?${qs}`,
+    balance: `${FMP_BASE}/balance-sheet-statement?${qs}`,
+    cashflow: `${FMP_BASE}/cash-flow-statement?${qs}`
+  };
+}
+function fmpExtract(income, balance, cashflow){
+  const curI = Array.isArray(income)&&income[0]||{}; const prevI = Array.isArray(income)&&income[1]||{};
+  const curB = Array.isArray(balance)&&balance[0]||{}; const prevB = Array.isArray(balance)&&balance[1]||{};
+  const curC = Array.isArray(cashflow)&&cashflow[0]||{}; const prevC = Array.isArray(cashflow)&&cashflow[1]||{};
+  const val = (obj, keys)=> { for(const k of keys){ if (typeof obj[k] === 'number') return obj[k]; } };
+  const cur = {
+    rev: val(curI, ['revenue','revenues']),
+    gp:  val(curI, ['grossProfit']),
+    ni:  val(curI, ['netIncome']),
+    sh:  val(curI, ['weightedAverageShsOutDil','weightedAverageShsOut']),
+    assets: val(curB, ['totalAssets']),
+    ca:  val(curB, ['totalCurrentAssets']),
+    cl:  val(curB, ['totalCurrentLiabilities']),
+    ltd: val(curB, ['longTermDebt']),
+    std: val(curB, ['shortTermDebt']),
+    cfo: val(curC, ['netCashProvidedByOperatingActivities'])
+  };
+  const prev = {
+    rev: val(prevI, ['revenue','revenues']),
+    gp:  val(prevI, ['grossProfit']),
+    ni:  val(prevI, ['netIncome']),
+    sh:  val(prevI, ['weightedAverageShsOutDil','weightedAverageShsOut']),
+    assets: val(prevB, ['totalAssets']),
+    ca:  val(prevB, ['totalCurrentAssets']),
+    cl:  val(prevB, ['totalCurrentLiabilities']),
+    ltd: val(prevB, ['longTermDebt']),
+    std: val(prevB, ['shortTermDebt']),
+    cfo: val(prevC, ['netCashProvidedByOperatingActivities'])
+  };
+  cur.totalDebt = Number.isFinite(parseNum(cur.ltd)) || Number.isFinite(parseNum(cur.std)) ? (parseNum(cur.ltd)||0)+(parseNum(cur.std)||0) : undefined;
+  prev.totalDebt = Number.isFinite(parseNum(prev.ltd)) || Number.isFinite(parseNum(prev.std)) ? (parseNum(prev.ltd)||0)+(parseNum(prev.std)||0) : undefined;
+  return {cur, prev};
+}
+function renderFmpTables(reqs, map){
+  const reqT = document.querySelector('#fmpReqTable tbody'); if (reqT) { reqT.innerHTML = ''; for(const r of reqs){
+    addRow(reqT, `<td class="mono">${r.name}</td><td><span class="pill ${r.ok?'ok':'bad'}">${r.status}</span></td><td>${Array.isArray(r.json)?r.json.length:'—'}</td><td class="mono">${r.url}</td>`);
+  }}
+  const headersPre = document.getElementById('fmpHeaders'); if (headersPre) headersPre.textContent = JSON.stringify(reqs.reduce((a,r)=>{a[r.name]=r.headers||{};return a;},{}), null, 2);
+  const jsonPre = document.getElementById('fmpJson'); const cut=(s)=> (s||'').slice(0,4000);
+  if (jsonPre) jsonPre.textContent = reqs.map(r=>`// ${r.name}\n${cut(r.text)}`).join('\n\n');
+  const rows = [
+    ['Revenue', map.cur.rev, map.prev.rev, 'income-statement'],
+    ['Gross Profit', map.cur.gp, map.prev.gp, 'income-statement'],
+    ['Total Assets', map.cur.assets, map.prev.assets, 'balance-sheet'],
+    ['Net Income', map.cur.ni, map.prev.ni, 'income-statement'],
+    ['CFO', map.cur.cfo, map.prev.cfo, 'cash-flow'],
+    ['LT Debt', map.cur.ltd, map.prev.ltd, 'balance-sheet'],
+    ['Current Assets', map.cur.ca, map.prev.ca, 'balance-sheet'],
+    ['Current Liabilities', map.cur.cl, map.prev.cl, 'balance-sheet'],
+    ['Shares (WA Dil/Basic)', map.cur.sh, map.prev.sh, 'income-statement'],
+    ['Total Debt (Computed)', map.cur.totalDebt, map.prev.totalDebt, 'computed']
+  ];
+  const parseT = document.querySelector('#fmpParseTable tbody'); if (parseT) { parseT.innerHTML=''; for(const [label,c,p,src] of rows){
+    const okc = Number.isFinite(parseNum(c)); const okp = Number.isFinite(parseNum(p));
+    addRow(parseT, `<td>${label}</td><td class="mono">${fmtNum(c)}</td><td class="mono">${fmtNum(p)}</td><td><span class="pill ${(okc||okp)?'ok':'bad'}">${(okc||okp)?src:'missing'}</span></td>`);
+  }}
+}
+function writeParsedToInputs(map){
+  const wr = (id, v)=> { if (Number.isFinite(parseNum(v))) mark(id, 'FMP', v, {force:true}); };
+  wr('rev0', map.cur.rev); wr('gp0', map.cur.gp); wr('assets0', map.cur.assets); wr('ni0', map.cur.ni);
+  wr('cfo0', map.cur.cfo); wr('ltd0', map.cur.ltd); wr('ca0', map.cur.ca); wr('cl0', map.cur.cl); wr('sh0', map.cur.sh);
+  wr('rev1', map.prev.rev); wr('gp1', map.prev.gp); wr('assets1', map.prev.assets); wr('ni1', map.prev.ni);
+  wr('cfo1', map.prev.cfo); wr('ltd1', map.prev.ltd); wr('ca1', map.prev.ca); wr('cl1', map.prev.cl); wr('sh1', map.prev.sh);
+  if (!Number.isFinite(num('ltd0')) && Number.isFinite(parseNum(map.cur.totalDebt))) window.AUX = Object.assign(window.AUX||{}, { tdebt0: parseNum(map.cur.totalDebt) });
+  if (!Number.isFinite(num('ltd1')) && Number.isFinite(parseNum(map.prev.totalDebt))) window.AUX = Object.assign(window.AUX||{}, { tdebt1: parseNum(map.prev.totalDebt) });
+  ensureComputedFallbacks(); finalizeStatusAfterFetch(); renderStatus();
+}
+async function runFmpFetchViaDebug(){
+  const key = (document.getElementById('fmpKey')||{value:''}).value.trim();
+  const t = (document.getElementById('ticker')||{value:''}).value.trim().toUpperCase();
+  if (!/^[A-Z]{1,5}$/.test(t)) { showAlert('Ticker must be 1–5 uppercase letters.'); return; }
+  if (!key) { showAlert('Enter your FMP API key.'); return; }
+  const urls = fmpBuildUrls(t, key);
+  const [rI, rB, rC] = await Promise.all([
+    fmpFetch(urls.income).then(x=>({...x,name:'income-statement'})),
+    fmpFetch(urls.balance).then(x=>({...x,name:'balance-sheet'})),
+    fmpFetch(urls.cashflow).then(x=>({...x,name:'cash-flow'})),
+  ]);
+  const map = fmpExtract(rI.json, rB.json, rC.json);
+  renderFmpTables([rI,rB,rC], map);
+  lastAttempt = 'FMP'; resetStatus(); writeParsedToInputs(map); computeAll(); renderStatus();
+}
+// Hook the existing UI buttons
+(function wireFmpButtons(){
+  const btnMain = document.getElementById('btnFmp');
+  if (btnMain) { btnMain.disabled = false; btnMain.onclick = runFmpFetchViaDebug; }
+  const btnDbg = document.getElementById('btnFmpDebug');
+  if (btnDbg) btnDbg.addEventListener('click', runFmpFetchViaDebug);
+  const btnClr = document.getElementById('btnFmpClear');
+  if (btnClr) btnClr.addEventListener('click', ()=>{
+    const $ = (s)=>document.querySelector(s);
+    if ($('#fmpReqTable tbody')) $('#fmpReqTable tbody').innerHTML='';
+    if ($('#fmpParseTable tbody')) $('#fmpParseTable tbody').innerHTML='';
+    if ($('#fmpHeaders')) $('#fmpHeaders').textContent='';
+    if ($('#fmpJson')) $('#fmpJson').textContent='';
+  });
+})();
+// ===== /FMP DEBUG/Fetcher =====
+
+
+// ===== FMP ENHANCEMENTS: derive EBIT/EBITDA/Tax/Cash/Equity/Growth =====
+function fmpExtractEnhanced(incomeArr, balanceArr, cashArr){
+  const safeArr = (a)=> Array.isArray(a) ? a : [];
+  const I = safeArr(incomeArr);
+  const B = safeArr(balanceArr);
+  const C = safeArr(cashArr);
+  // Use first as current, second as prior
+  const curI = I[0]||{}, prevI = I[1]||{};
+  const curB = B[0]||{}, prevB = B[1]||{};
+  const curC = C[0]||{}, prevC = C[1]||{};
+
+  // Helper to pick first numeric
+  const get = (o, list)=> { for(const k of list){ if (typeof o[k] === 'number') return o[k]; } };
+  // Revenue history for growth (up to 5 points)
+  const revHist = I.slice(0,5).map(row=> get(row, ['revenue','revenues']) ).filter(v=> Number.isFinite(v));
+
+  const derived = {
+    // EBIT: prefer operatingIncome
+    ebit: get(curI, ['operatingIncome','ebit','ebitda']) ?? undefined,
+    // EBITDA: prefer ebitda; else EBIT + D&A from either income or cashflow
+    ebitda: undefined,
+    // Income Tax
+    tax: get(curI, ['incomeTaxExpense','incomeTaxProvision']),
+    // Cash & equivalents
+    cash: get(curB, ['cashAndCashEquivalents','cashAndCashEquivalentsShortTermInvestments','cashAndShortTermInvestments']),
+    // Debt splits
+    std: get(curB, ['shortTermDebt','shortLongTermDebtTotal','currentDebt']),
+    cpltd: get(curB, ['shortLongTermDebtTotal','currentPortionOfLongTermDebt']),
+    termdebt: undefined,
+    // Equity accounts
+    cs: get(curB, ['commonStock']),
+    cap: get(curB, ['additionalPaidInCapital','capitalSurplus']),
+    re: get(curB, ['retainedEarnings']),
+    // Growth %
+    r1: undefined, r2: undefined, r3: undefined, r4: undefined,
+    // D&A to help EBITDA
+    da: get(curI, ['depreciationAndAmortization']) ?? get(curC, ['depreciationAndAmortization'])
+  };
+
+  // Backfill EBIT if we only have NI + taxes + interest (not available here), so keep as is.
+  // EBITDA
+  if (Number.isFinite(parseNum(get(curI, ['ebitda'])))) {
+    derived.ebitda = get(curI, ['ebitda']);
+  } else if (Number.isFinite(parseNum(derived.ebit)) && Number.isFinite(parseNum(derived.da))) {
+    derived.ebitda = parseNum(derived.ebit) + parseNum(derived.da);
   }
 
-  function resetAll(){
-    const inputs = [
-      'rev0','rev4','ebit','ebitda','tax','cash','std','cpltd','ltd0','termdebt','assets0','cl0','wacc','fscoreInput'
-    ];
-    inputs.forEach(id=>{const el=g(id); if(el) el.value='';});
-    const outs = [
-      'ebitMarginOut','ndebtOut','roicOut','cumOut','cumOut2','spreadOut','fscoreOut',
-      'growthClass','growthClass2','spreadPill','verdict','reason','notes'
-    ];
-    outs.forEach(id=>{
-      if(id==='spreadPill'){
-        g(id).textContent='Spread (ROIC – WACC): —';
-        g(id).className = 'pill';
-      }else if(id==='growthClass'||id==='growthClass2'){
-        g(id).textContent='—';
-        if(id==='growthClass') g(id).textContent = 'Growth Class: —';
-      }else if(id==='verdict'){
-        g(id).textContent='Needs inputs';
-      }else if(id==='reason'){
-        g(id).textContent='Fetch or fill fields, enter WACC, then press Compute.';
-      }else if(id==='notes'){
-        g(id).textContent='Enter a WACC to see value creation or destruction.';
-      }else{
-        g(id).textContent='—';
-      }
+  // Term debt = LTD + STD if both present
+  const ltd = get(curB, ['longTermDebt']);
+  if (Number.isFinite(parseNum(ltd)) || Number.isFinite(parseNum(derived.std))) {
+    derived.termdebt = (parseNum(ltd)||0) + (parseNum(derived.std)||0);
+  }
+
+  // Revenue growth calculations (YoY %)
+  // r1: (rev0 - rev1)/rev1, r2: (rev1 - rev2)/rev2, etc.
+  function grow(a,b){ return (Number.isFinite(parseNum(a)) && Number.isFinite(parseNum(b)) && b!=0) ? (parseNum(a)-parseNum(b))/parseNum(b)*100 : undefined; }
+  if (revHist.length >= 2) derived.r1 = grow(revHist[0], revHist[1]);
+  if (revHist.length >= 3) derived.r2 = grow(revHist[1], revHist[2]);
+  if (revHist.length >= 4) derived.r3 = grow(revHist[2], revHist[3]);
+  if (revHist.length >= 5) derived.r4 = grow(revHist[3], revHist[4]);
+
+  return derived;
+}
+
+function writeDerivedToInputs(derived){
+  const wr = (id, v)=> { if (Number.isFinite(parseNum(v))) mark(id, 'FMP*', v, {force:true}); };
+
+  wr('ebit', derived.ebit);
+  wr('ebitda', derived.ebitda);
+  wr('tax', derived.tax);
+  wr('cash', derived.cash);
+  wr('std', derived.std);
+  wr('cpltd', derived.cpltd);
+  wr('termdebt', derived.termdebt);
+  wr('cs', derived.cs);
+  wr('cap', derived.cap);
+  wr('re', derived.re);
+  wr('r1', derived.r1);
+  wr('r2', derived.r2);
+  wr('r3', derived.r3);
+  wr('r4', derived.r4);
+}
+
+// Hook into the existing FMP flow: after we parse map, compute derived and write
+const __old_runFmpFetchViaDebug = runFmpFetchViaDebug;
+runFmpFetchViaDebug = async function(){
+  const key = (document.getElementById('fmpKey')||{value:''}).value.trim();
+  const t = (document.getElementById('ticker')||{value:''}).value.trim().toUpperCase();
+  if (!/^[A-Z]{1,5}$/.test(t)) { showAlert('Ticker must be 1–5 uppercase letters.'); return; }
+  if (!key) { showAlert('Enter your FMP API key.'); return; }
+
+  const urls = fmpBuildUrls(t, key);
+  const [rI, rB, rC] = await Promise.all([
+    fmpFetch(urls.income).then(x=>({...x,name:'income-statement'})),
+    fmpFetch(urls.balance).then(x=>({...x,name:'balance-sheet'})),
+    fmpFetch(urls.cashflow).then(x=>({...x,name:'cash-flow'})),
+  ]);
+
+  // Render basic table using existing functions if present
+  const map = fmpExtract(rI.json, rB.json, rC.json);
+  renderFmpTables([rI,rB,rC], map);
+
+  lastAttempt = 'FMP'; resetStatus(); writeParsedToInputs(map);
+
+  // New: derive missing fields and write them
+  const derived = fmpExtractEnhanced(rI.json, rB.json, rC.json);
+  writeDerivedToInputs(derived);
+
+  computeAll(); renderStatus();
+};
+// ===== /FMP ENHANCEMENTS =====
+
+
+  // Debug toggle
+  const dbgToggle = document.getElementById('debugToggle');
+  const dbgCard = document.getElementById('fmpDebugCard');
+  if (dbgToggle && dbgCard){
+    dbgToggle.addEventListener('change', (e)=>{
+      dbgCard.style.display = e.target.checked ? 'block' : 'none';
     });
   }
 
-  // Wire up
-  document.getElementById('compute').addEventListener('click', computeSnapshot);
-  document.getElementById('reset').addEventListener('click', resetAll);
+  // API key show/hide
+  const toggleEye = (btnId, inputId)=>{
+    const btn = document.getElementById(btnId);
+    const input = document.getElementById(inputId);
+    if (!btn || !input) return;
+    btn.addEventListener('click', ()=>{
+      input.type = (input.type === 'password') ? 'text' : 'password';
+    });
+  };
+  toggleEye('toggleFinnhubKey','finnhubKey');
+  toggleEye('toggleFmpKey','fmpKey');
+
+  // Shared state for verdict
+  const V = { fscore: null, roic: null, spread: null, growthPct: null, growthClass: '—' };
+
+  function computeVerdict(){
+    // Pull numbers from existing DOM/state
+    try{
+      const scoreText = (document.getElementById('totalScore')?.textContent||'').split('/')[0].trim();
+      const fscore = parseFloat(scoreText);
+      const spreadTxt = (document.getElementById('spread')?.textContent||'').replace('%','').trim();
+      const roicTxt = (document.getElementById('roicOut')?.textContent||'').replace('%','').trim();
+      const cgTxt = (document.getElementById('cumOut')?.textContent||'').replace('%','').trim();
+      const gClass = (document.getElementById('growthClass')?.textContent||'—').trim();
+
+      V.fscore = Number.isFinite(parseFloat(fscore)) ? parseFloat(fscore) : null;
+      V.spread = Number.isFinite(parseFloat(spreadTxt)) ? parseFloat(spreadTxt) : null;
+      V.roic = Number.isFinite(parseFloat(roicTxt)) ? parseFloat(roicTxt) : null;
+      V.growthPct = Number.isFinite(parseFloat(cgTxt)) ? parseFloat(cgTxt) : null;
+      V.growthClass = gClass;
+
+      const vLabel = document.getElementById('verdictLabel');
+      const vBadge = document.getElementById('verdictBadge');
+      const vEmoji = document.getElementById('verdictEmoji');
+      const vReason = document.getElementById('verdictReason');
+      const vFs = document.getElementById('vFscore');
+      const vSp = document.getElementById('vSpread');
+      const vGc = document.getElementById('vGrowthClass');
+      const vGn = document.getElementById('vGrowthNum');
+
+      vFs.textContent = (V.fscore!=null) ? V.fscore + ' / 9' : '—';
+      vSp.textContent = (V.spread!=null) ? V.spread.toFixed(2) + '%' : '—';
+      vGc.textContent = V.growthClass || '—';
+      vGn.textContent = (V.growthPct!=null) ? V.growthPct.toFixed(2) + '%' : '—';
+
+      // If missing key pieces, show neutral
+      if (V.fscore==null || V.spread==null || V.growthPct==null){
+        vLabel.textContent = 'Needs inputs';
+        vEmoji.textContent = '—';
+        vReason.textContent = 'Fetch or fill fields, enter WACC, then press Compute.';
+        vBadge.className = 'kpi na';
+        return;
+      }
+
+      // Buckets
+      const fBucket = (V.fscore >= 7) ? 'strong' : (V.fscore >= 4 ? 'avg' : 'weak');
+      const sBucket = (V.spread > 2) ? 'positive' : (V.spread < -1 ? 'negative' : 'flat');
+      const gBucket = (V.growthPct >= 30) ? 'ok' : (V.growthPct >= 25 ? 'borderline' : 'weak');
+
+      // Verdict rules
+      let verdict = 'Neutral / Needs work';
+      let emoji = '•';
+      let badge = 'kpi na';
+      let why = [];
+
+      if (fBucket=='strong' && sBucket=='positive' && (gBucket=='ok' || gBucket=='borderline')){
+        verdict = 'Strong Candidate';
+        emoji = '✓';
+        badge = 'kpi good';
+      } else if ((fBucket=='strong' || fBucket=='avg') && sBucket!='negative' && (gBucket!='weak')){
+        verdict = 'Watch / Conditional Buy';
+        emoji = '◔';
+        badge = 'kpi';
+      } else if (fBucket=='weak' || sBucket=='negative'){
+        verdict = 'Avoid for now';
+        emoji = '×';
+        badge = 'kpi bad';
+      }
+
+      // Reasons
+      why.push(`F‑Score ${V.fscore}/9 (${fBucket})`);
+      why.push(`Spread ${V.spread.toFixed(2)}% (${sBucket})`);
+      why.push(`Growth ${V.growthPct.toFixed(2)}% (${gBucket}; ${V.growthClass})`);
+
+      vLabel.textContent = verdict;
+      vEmoji.textContent = emoji;
+      vBadge.className = badge;
+      vReason.textContent = why.join(' • ');
+    }catch(e){ /* no-op */ }
+  }
+
+  // Patch compute functions to also compute verdict
+  const __old_computeAll = computeAll;
+  computeAll = function(){ __old_computeAll(); computeVerdict(); };
+
+  // Recompute verdict on key inputs
+  ['wacc','r1','r2','r3','r4'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', computeVerdict);
+  });
+  // Also recompute on theme toggle just to be safe (no-op if values unchanged)
+  if (toggle) toggle.addEventListener('change', computeVerdict);
+
+  // Initial verdict state
+  computeVerdict();
+
 </script>
+
+<!-- ===== FMP DEBUG CONSOLE (auto-injected) ===== -->
+<!-- Debug console is hidden by default. Toggle via the header "Debug" switch. -->
+<section class="card" id="fmpDebugCard" style="margin-top:16px; display:none">
+  <div class="row" style="justify-content:space-between;align-items:center;">
+    <strong>FMP Debug Console</strong>
+    <div class="row" style="gap:8px;">
+      <label class="small muted row" style="gap:6px;">
+        <input id="fmpDebugWrite" type="checkbox" />
+        <span>Also write parsed values to inputs</span>
+      </label>
+      <button class="btn small" id="btnFmpDebug">Run FMP Debug</button>
+      <button class="btn small" id="btnFmpClear">Clear</button>
+    </div>
+  </div>
+  <div class="alert warn small" style="margin-top:8px">
+    Requires Ticker and FMP API key. Uses annual statements, limit=6 (current & prior).
+  </div>
+  <div class="grid" style="grid-template-columns: 1fr; gap:12px; margin-top:8px;">
+    <div>
+      <label class="small muted">Requests</label>
+      <table class="table" id="fmpReqTable">
+        <thead><tr><th>Endpoint</th><th>Status</th><th>Items</th><th>URL</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div>
+      <label class="small muted">Parsed Field Map</label>
+      <table class="table" id="fmpParseTable">
+        <thead><tr><th>Field</th><th>Current</th><th>Prior</th><th>Source</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <details>
+      <summary class="small muted"><strong>Response headers</strong></summary>
+      <pre class="mono" id="fmpHeaders" style="white-space:pre-wrap;margin:8px 0"></pre>
+    </details>
+    <details>
+      <summary class="small muted"><strong>Raw JSON snippets</strong></summary>
+      <pre class="mono" id="fmpJson" style="white-space:pre-wrap;margin:8px 0; max-height:260px; overflow:auto"></pre>
+    </details>
+  </div>
+</section>
+<!-- ===== /FMP DEBUG CONSOLE ===== -->
+<!-- removed old SEC script -->
+<!-- removed old SEC script -->
+
+
+
+<!-- Debug drawer (Alt+D) -->
+<details id="dbg" style="display:none;margin:12px 0;">
+  <summary>Debug</summary>
+  <div id="dbg-body" style="padding:8px;border:1px dashed rgba(245,158,11,.6);border-radius:8px;">
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <button id="dbg-copy" type="button">Copy log</button>
+      <button id="dbg-clear" type="button">Clear</button>
+    </div>
+    <div id="dbg-live" style="font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap;"></div>
+    <table id="dbg-net" style="width:100%;margin-top:8px;font-size:12px;border-collapse:collapse;">
+      <thead>
+        <tr><th align="left">When</th><th align="left">Label</th><th align="left">Status</th><th align="left">ms</th><th align="left">Bytes</th><th align="left">URL</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</details>
+
+
+<script>
+const DBG = (() => {
+  const state = { lines: [], shown: false };
+  const els = {};
+  function qs(id){ return document.getElementById(id); }
+  function init(){
+    els.box = qs('dbg'); els.live = qs('dbg-live');
+    els.net = qs('dbg-net')?.querySelector('tbody');
+    qs('dbg-copy')?.addEventListener('click', () => {
+      const text = state.lines.join('\n'); navigator.clipboard.writeText(text);
+    });
+    qs('dbg-clear')?.addEventListener('click', () => {
+      state.lines = []; if(els.live) els.live.textContent=''; if(els.net) els.net.innerHTML='';
+    });
+    window.addEventListener('keydown', e => {
+      if (e.altKey && e.key.toLowerCase()==='d') {
+        state.shown = !state.shown; if (els.box) { els.box.style.display = state.shown ? '' : 'none'; if (state.shown) els.box.open = true; }
+      }
+    });
+  }
+  function log(msg){
+    const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    state.lines.push(line); if (els.live) { els.live.textContent += line + '\n'; }
+    if (state.lines.length > 400) state.lines.splice(0, state.lines.length - 400);
+  }
+  function netRow({label,status,ms,bytes,url}){
+    if (!els.net) return;
+    const tr = document.createElement('tr');
+    [new Date().toLocaleTimeString(), label, status, ms, bytes, url].forEach(v=>{
+      const td = document.createElement('td'); td.textContent = String(v ?? ''); td.style.borderTop='1px solid rgba(255,255,255,.08)'; td.style.padding='4px 6px'; tr.appendChild(td);
+    });
+    els.net.appendChild(tr);
+  }
+  async function fetchTrace(url, opts={}, label=''){
+    const t0 = performance.now(); let bytes = 0, status = 'ERR';
+    try {
+      const r = await fetch(url, opts); status = r.status;
+      const ct = r.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await r.json() : await r.text();
+      const raw = typeof data === 'string' ? data : JSON.stringify(data);
+      bytes = Number(r.headers.get('content-length')) || (raw ? raw.length : 0);
+      netRow({label, status, ms: Math.round(performance.now()-t0), bytes, url: (typeof url==='string'? url : url.url)});
+      return { ok: r.ok, status: r.status, data };
+    } catch(e){
+      netRow({label, status, ms: Math.round(performance.now()-t0), bytes, url: (typeof url==='string'? url : url.url)});
+      log(`Error ${label}: ${e.message || e}`); return { ok:false, status:'ERR', data:null };
+    }
+  }
+  function field(name, info){ log(`Field ${name}: ${info}`); }
+  document.addEventListener('DOMContentLoaded', init);
+  return { log, fetch: fetchTrace, field };
+})();
+</script>
+
+
+<script>
+(() => {
+  const SEC_BASE = `${location.origin}/api`;
+
+  const byId = (id) => document.getElementById(id);
+  function show(msg){ const box=document.getElementById('alerts'); if(box){ const d=document.createElement('div'); d.className='alert warn'; d.textContent=msg; box.appendChild(d);} else { console.log('[SEC]', msg); } }
+  const TAGS = {
+    rev: ['RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenues'],
+    gp:  ['GrossProfit'],
+    assets: ['Assets'],
+    ni: ['NetIncomeLoss'],
+    cfo: ['NetCashProvidedByUsedInOperatingActivities'],
+    ltd: ['LongTermDebtNoncurrent','LongTermDebtAndCapitalLeaseObligations','LongTermDebt'],
+    ca:  ['AssetsCurrent'],
+    cl:  ['LiabilitiesCurrent'],
+    sh:  ['WeightedAverageNumberOfDilutedSharesOutstanding','WeightedAverageNumberOfSharesOutstandingBasic','WeightedAverageNumberOfSharesOutstandingBasicAndDiluted','CommonStockSharesOutstanding']
+  };
+	// --- Extra tags for the "Additional" section ---
+const EXTRA = {
+  ebit:   ['EarningsBeforeInterestAndTaxes','OperatingIncomeLoss'],
+  ebitda: ['EarningsBeforeInterestAndTaxesDepreciationAndAmortization','EarningsBeforeInterestDepreciationAndAmortization'],
+  tax:    ['IncomeTaxExpenseBenefit'],
+  da:     ['DepreciationAndAmortization','DepreciationDepletionAndAmortization'],
+  cash:   ['CashAndCashEquivalentsAtCarryingValue','CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'],
+
+  // Short-term / current debt (broadened)
+  std:    ['ShortTermBorrowings','ShortTermDebt','DebtCurrent','OtherShortTermBorrowingsCurrent','CommercialPaper','NotesPayableCurrent'],
+
+  // Current portion of LT debt
+  cpltd:  ['LongTermDebtCurrent','LongTermDebtAndFinanceLeaseObligationsCurrent'],
+
+  // Long-term / noncurrent piece (term debt)
+  termdebt: ['LongTermDebtNoncurrent','LongTermDebt'],
+
+  // Equity components (broadened)
+  commonstock: ['CommonStockValue','CommonStockNoParValue','CommonStockParValue'],
+  apic:        ['AdditionalPaidInCapital','AdditionalPaidInCapitalCommonStock','PaidInCapital'],
+  retained:    ['RetainedEarningsAccumulatedDeficit','RetainedEarnings','AccumulatedDeficit']
+};
+
+// return latest FY value for any of the tags (prefers USD/shares/pure)
+function latestAnnual(facts, tagList){
+  const root = facts?.facts?.['us-gaap'] || facts?.facts?.['US-GAAP'];
+  if (!root) return null;
+  const prefer = ['USD','shares','pure'];
+  for (const tag of tagList){
+    const obj = root[tag]; if (!obj?.units) continue;
+    for (const u of prefer.concat(Object.keys(obj.units))){
+      const arr = obj.units[u]; if (!Array.isArray(arr)) continue;
+      const annual = arr.filter(x => x.fp==='FY' || /10-K|20-F|40-F/i.test(x.form))
+                        .sort((a,b)=> (b.fy||0)-(a.fy||0) || new Date(b.end)-new Date(a.end));
+      if (annual.length) return annual[0].val ?? null;
+    }
+  }
+  return null;
+}
+
+// return up to N most recent FY revenue values (descending: latest first)
+function revenueSeries(facts, n=5){
+  const root = facts?.facts?.['us-gaap'] || facts?.facts?.['US-GAAP'];
+  if (!root) return [];
+  const tags = ['RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenues'];
+  for (const tag of tags){
+    const obj = root[tag]; if (!obj?.units?.USD) continue;
+    const annual = obj.units.USD
+      .filter(x => x.fp==='FY' || /10-K|20-F|40-F/i.test(x.form))
+      .sort((a,b)=> (b.fy||0)-(a.fy||0) || new Date(b.end)-new Date(a.end));
+    const out = [];
+    const seen = new Set();
+    for (const x of annual){
+      const key = x.fy || x.end;
+      if (!seen.has(key)) { out.push(x.val ?? null); seen.add(key); }
+      if (out.length === n) break;
+    }
+    if (out.length) return out; // latest → older
+  }
+  return [];
+}
+
+function pct(a,b){ if (b === 0 || b == null || a == null) return null; return (a/b - 1) * 100; }
+function set(id, v){ const el = document.getElementById(id); if (el) el.value = (v ?? ''); }
+
+  function getTicker(){
+    const t = document.querySelector('#ticker, input[name*=ticker i], input[placeholder*=ticker i]');
+    return (t?.value || '').trim().toUpperCase();
+  }
+  function padCIK(n){ n=String(n||'').replace(/\D/g,''); return n.padStart(10,'0'); }
+
+  async function tickerToCIK(symbol){
+    const r = await DBG.fetch(`${SEC_BASE}/sec-tickers`, {}, 'sec-tickers');
+    if (!r.ok) return null;
+    const data = r.data;
+    const hit = Object.values(data).find(x => (x.ticker||'').toUpperCase() === symbol.toUpperCase());
+    return hit ? padCIK(hit.cik_str) : null;
+  }
+
+  function pickTwoAnnual(series){
+    if (!Array.isArray(series)) return null;
+    const annual = series.filter(x => x.fp==='FY' || /10-K|20-F|40-F/i.test(x.form))
+                         .sort((a,b)=> (b.fy||0)-(a.fy||0) || new Date(b.end)-new Date(a.end));
+    const out=[], seen=new Set();
+    for (const x of annual){
+      const key = x.fy || x.end;
+      if (!seen.has(key)) { out.push(x); seen.add(key); }
+      if (out.length===2) break;
+    }
+    return out.length ? [out[0].val ?? null, (out[1]?.val) ?? null] : null;
+  }
+
+  function findPair(facts, tagList){
+  // Correct root: facts.facts['us-gaap']
+  const root = facts?.facts?.['us-gaap'] || facts?.facts?.['US-GAAP'];
+  if (!root) return null;
+
+  for (const tag of tagList){
+    const obj = root[tag];
+    if (!obj || !obj.units) continue;
+
+    // Preferred units first
+    const pref = ['USD','shares','pure'];
+    for (const want of pref){
+      if (obj.units[want]) {
+        const p = pickTwoAnnual(obj.units[want]);
+        if (p) { return {pair:p, tag, unit:want}; }
+      }
+    }
+    // Any unit that yields annuals
+    for (const [unit, arr] of Object.entries(obj.units)){
+      const p = pickTwoAnnual(arr);
+      if (p) { return {pair:p, tag, unit}; }
+    }
+  }
+  return null;
+}
+
+  function setVal(id, v){ const el=byId(id); if(el) el.value = v ?? ''; }
+  function writePair(label, meta, ids){
+    if (!meta || !meta.pair){ DBG.field(label, 'missing'); return; }
+    const [aId,bId]=ids; const [a,b]=meta.pair; setVal(aId,a); setVal(bId,b);
+    DBG.field(label, `${meta.tag} (${meta.unit}) -> [${a}, ${b}]`);
+  }
+
+  async function populateSEC(){
+    const t = getTicker();
+    if (!t){ show('Enter a ticker.'); return; }
+ //   show(`Fetching SEC data for ${t}…`); DBG.log(`SEC start ${t}`);
+
+    try{
+      const cik = await tickerToCIK(t);
+      if (!cik){ show('CIK not found.'); DBG.log('CIK not found'); return; }
+
+      const rf = await DBG.fetch(`${SEC_BASE}/sec-companyfacts?cik=${cik}`, {}, 'companyfacts');
+      if (!rf.ok){ show(`SEC companyfacts ${rf.status}`); return; }
+      const facts = rf.data;
+
+      const rev = findPair(facts, TAGS.rev);
+      const gp  = findPair(facts, TAGS.gp);
+      const cogs= findPair(facts, ['CostOfGoodsAndServicesSold','CostOfRevenue']);
+      const assets=findPair(facts, TAGS.assets);
+      const ni   =findPair(facts, TAGS.ni);
+      const cfo  =findPair(facts, TAGS.cfo);
+      const ltd  =findPair(facts, TAGS.ltd);
+      const ca   =findPair(facts, TAGS.ca);
+      const cl   =findPair(facts, TAGS.cl);
+      const sh   =findPair(facts, TAGS.sh);
+
+      writePair('Revenue', rev, ['rev0','rev1']);
+      if (gp){ writePair('Gross Profit', gp, ['gp0','gp1']); }
+      else if (rev && cogs){ const pair=[(rev.pair[0]??0)-(cogs.pair[0]??0),(rev.pair[1]??0)-(cogs.pair[1]??0)]; setVal('gp0',pair[0]); setVal('gp1',pair[1]); DBG.field('Gross Profit', `computed from ${rev.tag} - ${cogs.tag} -> [${pair[0]}, ${pair[1]}]`); }
+      writePair('Assets', assets, ['assets0','assets1']);
+      writePair('Net Income', ni, ['ni0','ni1']);
+      writePair('CFO', cfo, ['cfo0','cfo1']);
+      writePair('LT Debt', ltd, ['ltd0','ltd1']);
+      writePair('Current Assets', ca, ['ca0','ca1']);
+      writePair('Current Liabilities', cl, ['cl0','cl1']);
+      writePair('Shares', sh, ['sh0','sh1']);
+
+      if (typeof ensureComputedFallbacks === 'function') ensureComputedFallbacks();
+      if (typeof finalizeStatusAfterFetch === 'function') finalizeStatusAfterFetch();
+      if (typeof computeAll === 'function') computeAll();
+		// --- Additional section population ---
+
+// EBIT: direct tag; else NI + Interest + Tax
+let EBIT = latestAnnual(facts, EXTRA.ebit);
+if (EBIT == null) {
+  const NI  = latestAnnual(facts, ['NetIncomeLoss']);
+  const INT = latestAnnual(facts, ['InterestExpense','InterestExpenseDebt']);
+  const TAX = latestAnnual(facts, EXTRA.tax);
+  if (NI != null && (INT != null || TAX != null)) EBIT = (NI ?? 0) + (INT ?? 0) + (TAX ?? 0);
+}
+
+// EBITDA: direct tag; else EBIT + D&A
+let EBITDA = latestAnnual(facts, EXTRA.ebitda);
+if (EBITDA == null) {
+  const DA = latestAnnual(facts, EXTRA.da);
+  if (EBIT != null && DA != null) EBITDA = EBIT + DA;
+}
+
+// Income tax expense
+const TAX = latestAnnual(facts, EXTRA.tax);
+
+// Cash & equivalents
+const CASH = latestAnnual(facts, EXTRA.cash);
+
+// Debt pieces
+const STD   = latestAnnual(facts, EXTRA.std);     // short-term or current debt
+const CPLTD = latestAnnual(facts, EXTRA.cpltd);   // current portion of LT debt
+const TERM  = latestAnnual(facts, EXTRA.termdebt);// LT (noncurrent)
+
+// Equity components
+const CSTK = latestAnnual(facts, EXTRA.commonstock);
+const APIC = latestAnnual(facts, EXTRA.apic);
+const RETE = latestAnnual(facts, EXTRA.retained);
+
+// Revenue growth % (last four YoY)
+const revs = revenueSeries(facts, 5); // [Y0,Y-1,Y-2,Y-3,Y-4]
+const g1 = revs.length>=2 ? pct(revs[0], revs[1]) : null;
+const g2 = revs.length>=3 ? pct(revs[1], revs[2]) : null;
+const g3 = revs.length>=4 ? pct(revs[2], revs[3]) : null;
+const g4 = revs.length>=5 ? pct(revs[3], revs[4]) : null;
+
+// Write to inputs — change IDs here if yours differ
+set('ebit', EBIT);
+set('ebitda', EBITDA);
+set('tax', TAX);
+set('cash', CASH);
+
+// Debt pieces
+set('std', STD);
+set('cpltd', CPLTD);
+set('termdebt', TERM);
+
+// Equity components (match your inputs)
+set('cs',  CSTK);   // Common Stock
+set('cap', APIC);   // Capital Surplus (APIC)
+set('re',  RETE);   // Retained Earnings
+
+// Revenue growth % (match your inputs)
+set('r1', g1?.toFixed(2));
+set('r2', g2?.toFixed(2));
+set('r3', g3?.toFixed(2));
+set('r4', g4?.toFixed(2));
+
+    //  show(`Done: ${t}`); DBG.log(`SEC done ${t}`);
+    } catch(e){
+      show(`SEC error: ${e.message || e}`); DBG.log(`SEC error ${e.message || e}`);
+    }
+  }
+
+  function wire(){
+    document.getElementById('btnSec')?.addEventListener('click', populateSEC);
+    window.addEventListener('keydown', e => { if (e.altKey && e.key.toLowerCase()==='s'){ e.preventDefault(); populateSEC(); } });
+    window.__secPopulate = populateSEC;
+  }
+  if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', wire); else wire();
+})();
+</script>
+<script>
+  const NOTE_DEFAULTS = {
+    std: "Financials → Cash Flow Statements → Uses of Funds → Increase (Decrease) Short-Term Debt",
+    cpltd: "Financials → Balance Sheet → Liabilities & Shareholders Equity → Current Portion Long-Term Debt",
+    cs: "Financials → Balance Sheet → Shareholders Equity → Common Stock (Par)",
+    cap: "Financials → Balance Sheet → Shareholders Equity → Capital Surplus",
+    re: "Financials → Balance Sheet → Shareholders Equity → Retained Earnings"
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    Object.entries(NOTE_DEFAULTS).forEach(([id, text]) => {
+      const ta = document.getElementById("note_" + id);
+      if (ta && !ta.value) ta.value = text;
+    });
+  });
+</script>
+	  <script>
+// --- 1) Map inputs -> status cells (use your existing input IDs)
+const STATUS_MAP = {
+  rev_cur:   { valueSel: '[data-value-for="rev_cur"]',   sourceSel: '[data-source-for="rev_cur"]'   },
+  ni_cur:    { valueSel: '[data-value-for="ni_cur"]',    sourceSel: '[data-source-for="ni_cur"]'    },
+  ca_cur:    { valueSel: '[data-value-for="ca_cur"]',    sourceSel: '[data-source-for="ca_cur"]'    },
+
+  rev_pri:   { valueSel: '[data-value-for="rev_pri"]',   sourceSel: '[data-source-for="rev_pri"]'   },
+  ni_pri:    { valueSel: '[data-value-for="ni_pri"]',    sourceSel: '[data-source-for="ni_pri"]'    },
+  ca_pri:    { valueSel: '[data-value-for="ca_pri"]',    sourceSel: '[data-source-for="ca_pri"]'    },
+
+  ebit:      { valueSel: '[data-value-for="ebit"]',      sourceSel: '[data-source-for="ebit"]'      },
+  cash:      { valueSel: '[data-value-for="cash"]',      sourceSel: '[data-source-for="cash"]'      },
+  termdebt:  { valueSel: '[data-value-for="termdebt"]',  sourceSel: '[data-source-for="termdebt"]'  },
+
+  std:       { valueSel: '[data-value-for="std"]',       sourceSel: '[data-source-for="std"]'       },
+  cpltd:     { valueSel: '[data-value-for="cpltd"]',     sourceSel: '[data-source-for="cpltd"]'     },
+  cs:        { valueSel: '[data-value-for="cs"]',        sourceSel: '[data-source-for="cs"]'        },
+  cap:       { valueSel: '[data-value-for="cap"]',       sourceSel: '[data-source-for="cap"]'       },
+  re:        { valueSel: '[data-value-for="re"]',        sourceSel: '[data-source-for="re"]'        },
+
+  r1:        { valueSel: '[data-value-for="r1"]',        sourceSel: '[data-source-for="r1"]'        },
+  r2:        { valueSel: '[data-value-for="r2"]',        sourceSel: '[data-source-for="r2"]'        },
+  r3:        { valueSel: '[data-value-for="r3"]',        sourceSel: '[data-source-for="r3"]'        },
+  r4:        { valueSel: '[data-value-for="r4"]',        sourceSel: '[data-source-for="r4"]'        }
+};
+
+// --- 2) Central place to remember how a field was filled
+const FIELD_SOURCES = {};  // e.g., { rev_cur: 'SEC', std: 'SEC: DebtCurrent', cs: 'Manual', ... }
+
+// --- 3) Safe helpers
+function getVal(id){
+  const el = document.getElementById(id);
+  if (!el) return '';
+  const v = ('value' in el) ? el.value : el.textContent;
+  return v ?? '';
+}
+
+function setVal(id, v, source){ // drop-in setter you can use anywhere
+  const el = document.getElementById(id);
+  if (!el) return;
+  if ('value' in el) el.value = v ?? ''; else el.textContent = v ?? '';
+  if (source) FIELD_SOURCES[id] = source;
+  refreshStatusFor(id);
+}
+
+// --- 4) Update a single row
+function refreshStatusFor(id){
+  const conf = STATUS_MAP[id];
+  if (!conf) return;
+
+  // value cell
+  const vEl = document.querySelector(conf.valueSel);
+  if (vEl){
+    const raw = getVal(id);
+    vEl.textContent = raw === '' ? '—' : raw;
+  }
+
+  // source cell
+  const sEl = document.querySelector(conf.sourceSel);
+  if (sEl){
+    const src = FIELD_SOURCES[id] || (getVal(id)==='' ? '' : 'Manual');
+    sEl.textContent = src || '—';
+  }
+}
+
+// --- 5) Update all rows (call on load)
+function refreshStatusAll(){
+  Object.keys(STATUS_MAP).forEach(refreshStatusFor);
+}
+
+// --- 6) Mark manual edits automatically
+function wireManualTracking(){
+  Object.keys(STATUS_MAP).forEach(id=>{
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      FIELD_SOURCES[id] = 'Manual';
+      refreshStatusFor(id);
+    });
+  });
+}
+
+// --- 7) Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  wireManualTracking();
+  refreshStatusAll();
+});
+
+// --- 8) After any fetch/populate, call these:
+window.finalizeStatusAfterFetch = function(){
+  refreshStatusAll();
+};
+</script>
+
 </body>
 </html>
-"""
-with open("/mnt/data/index-fixed.html","w",encoding="utf-8") as f:
-    f.write(html)
-print("Saved /mnt/data/index-fixed.html")
