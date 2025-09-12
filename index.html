@@ -1510,17 +1510,25 @@ const DBG = (() => {
   };
 	// --- Extra tags for the "Additional" section ---
 const EXTRA = {
-  ebit: ['EarningsBeforeInterestAndTaxes','OperatingIncomeLoss'],
+  ebit:   ['EarningsBeforeInterestAndTaxes','OperatingIncomeLoss'],
   ebitda: ['EarningsBeforeInterestAndTaxesDepreciationAndAmortization','EarningsBeforeInterestDepreciationAndAmortization'],
-  tax: ['IncomeTaxExpenseBenefit'],
-  da: ['DepreciationAndAmortization','DepreciationDepletionAndAmortization'],
-  cash: ['CashAndCashEquivalentsAtCarryingValue','CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'],
-  std: ['ShortTermBorrowings','DebtCurrent'],
-  cpltd: ['LongTermDebtCurrent','LongTermDebtAndFinanceLeaseObligationsCurrent'],
+  tax:    ['IncomeTaxExpenseBenefit'],
+  da:     ['DepreciationAndAmortization','DepreciationDepletionAndAmortization'],
+  cash:   ['CashAndCashEquivalentsAtCarryingValue','CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'],
+
+  // Short-term / current debt (broadened)
+  std:    ['ShortTermBorrowings','ShortTermDebt','DebtCurrent','OtherShortTermBorrowingsCurrent','CommercialPaper','NotesPayableCurrent'],
+
+  // Current portion of LT debt
+  cpltd:  ['LongTermDebtCurrent','LongTermDebtAndFinanceLeaseObligationsCurrent'],
+
+  // Long-term / noncurrent piece (term debt)
   termdebt: ['LongTermDebtNoncurrent','LongTermDebt'],
-  commonstock: ['CommonStockValue'],
-  apic: ['AdditionalPaidInCapital'],
-  retained: ['RetainedEarningsAccumulatedDeficit']
+
+  // Equity components (broadened)
+  commonstock: ['CommonStockValue','CommonStockNoParValue','CommonStockParValue'],
+  apic:        ['AdditionalPaidInCapital','AdditionalPaidInCapitalCommonStock','PaidInCapital'],
+  retained:    ['RetainedEarningsAccumulatedDeficit','RetainedEarnings','AccumulatedDeficit']
 };
 
 // return latest FY value for any of the tags (prefers USD/shares/pure)
@@ -1628,7 +1636,7 @@ function set(id, v){ const el = document.getElementById(id); if (el) el.value = 
   async function populateSEC(){
     const t = getTicker();
     if (!t){ show('Enter a ticker.'); return; }
-    show(`Fetching SEC data for ${t}…`); DBG.log(`SEC start ${t}`);
+ //   show(`Fetching SEC data for ${t}…`); DBG.log(`SEC start ${t}`);
 
     try{
       const cik = await tickerToCIK(t);
@@ -1709,18 +1717,24 @@ set('ebit', EBIT);
 set('ebitda', EBITDA);
 set('tax', TAX);
 set('cash', CASH);
+
+// Debt pieces
 set('std', STD);
 set('cpltd', CPLTD);
 set('termdebt', TERM);
-set('commonstock', CSTK);
-set('capitalsurplus', APIC);
-set('retainedearnings', RETE);
-set('rev_growth_y1', g1?.toFixed(2));
-set('rev_growth_y2', g2?.toFixed(2));
-set('rev_growth_y3', g3?.toFixed(2));
-set('rev_growth_y4', g4?.toFixed(2));
 
-      show(`Done: ${t}`); DBG.log(`SEC done ${t}`);
+// Equity components (match your inputs)
+set('cs',  CSTK);   // Common Stock
+set('cap', APIC);   // Capital Surplus (APIC)
+set('re',  RETE);   // Retained Earnings
+
+// Revenue growth % (match your inputs)
+set('r1', g1?.toFixed(2));
+set('r2', g2?.toFixed(2));
+set('r3', g3?.toFixed(2));
+set('r4', g4?.toFixed(2));
+
+    //  show(`Done: ${t}`); DBG.log(`SEC done ${t}`);
     } catch(e){
       show(`SEC error: ${e.message || e}`); DBG.log(`SEC error ${e.message || e}`);
     }
