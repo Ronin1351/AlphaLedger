@@ -1748,6 +1748,21 @@ set('r4', g4?.toFixed(2));
   if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', wire); else wire();
 })();
 </script>
+<script>
+  const NOTE_DEFAULTS = {
+    std: "Financials → Cash Flow Statements → Uses of Funds → Increase (Decrease) Short-Term Debt",
+    cpltd: "Financials → Balance Sheet → Liabilities & Shareholders Equity → Current Portion Long-Term Debt",
+    cs: "Financials → Balance Sheet → Shareholders Equity → Common Stock (Par)",
+    cap: "Financials → Balance Sheet → Shareholders Equity → Capital Surplus",
+    re: "Financials → Balance Sheet → Shareholders Equity → Retained Earnings"
+  };
 
+  document.addEventListener('DOMContentLoaded', () => {
+    Object.entries(NOTE_DEFAULTS).forEach(([id, text]) => {
+      const ta = document.getElementById("note_" + id);
+      if (ta && !ta.value) ta.value = text;
+    });
+  });
+</script>
 </body>
 </html>
