@@ -1536,19 +1536,30 @@ const DBG = (() => {
   }
 
   function findPair(facts, tagList){
-    for (const tag of tagList){
-      const obj = facts.us_gaap?.[tag];
-      if (!obj || !obj.units) continue;
-      const pref=['USD','shares','pure'];
-      for (const u of pref){
-        if (obj.units[u]){ const p=pickTwoAnnual(obj.units[u]); if (p) return {pair:p, tag, unit:u}; }
-      }
-      for (const [u,arr] of Object.entries(obj.units)){
-        const p=pickTwoAnnual(arr); if (p) return {pair:p, tag, unit:u};
+  // Correct root: facts.facts['us-gaap']
+  const root = facts?.facts?.['us-gaap'] || facts?.facts?.['US-GAAP'];
+  if (!root) return null;
+
+  for (const tag of tagList){
+    const obj = root[tag];
+    if (!obj || !obj.units) continue;
+
+    // Preferred units first
+    const pref = ['USD','shares','pure'];
+    for (const want of pref){
+      if (obj.units[want]) {
+        const p = pickTwoAnnual(obj.units[want]);
+        if (p) { return {pair:p, tag, unit:want}; }
       }
     }
-    return null;
+    // Any unit that yields annuals
+    for (const [unit, arr] of Object.entries(obj.units)){
+      const p = pickTwoAnnual(arr);
+      if (p) { return {pair:p, tag, unit}; }
+    }
   }
+  return null;
+}
 
   function setVal(id, v){ const el=byId(id); if(el) el.value = v ?? ''; }
   function writePair(label, meta, ids){
