@@ -855,53 +855,39 @@
     return (p > 120) ? 'Outlier' : '—';
   }
   function computeSnapshot(){
-    // EBIT Margin
-    const EBIT = parseNum(g('ebit').value), Sales = parseNum(g('rev0').value);
-    const ebitMargin = Sales !== 0 ? (EBIT / Sales) * 100 : 0;
-    g('ebitMarginOut').textContent = pct(ebitMargin);
-    // Net-debt/EBITDA
-    const std = parseNum(g('std').value), ltd = parseNum(g('ltd0').value), cpltd = parseNum(g('cpltd').value), termd = parseNum(g('termdebt').value);
-    const cash = parseNum(g('cash').value), ebitda = parseNum(g('ebitda').value);
-    const netDebt = (std||0) + (ltd||0) + (cpltd||0) + (termd||0) - (cash||0);
-    const ndRatio = ebitda !== 0 ? netDebt / ebitda : 0;
-    g('ndebtOut').textContent = fix(ndRatio, 2);
-    // ROIC
-    const tax = parseNum(g('tax').value), cpl = parseNum(g('cpltd').value), term = parseNum(g('termdebt').value), cs = parseNum(g('cs').value), cap = parseNum(g('cap').value), re = parseNum(g('re').value), rcash = parseNum(g('cash').value);
-    const NOPAT = (EBIT||0) - (tax||0);
-    const invested = (ltd||0) + (cpl||0) + (term||0) + (cs||0) + (cap||0) + (re||0) - (rcash||0);
-    const roic = invested !== 0 ? (NOPAT / invested) * 100 : 0;
-    g('roicOut').textContent = pct(roic);
-    // Growth
-    const r1 = parseNum(g('r1').value)/100, r2 = parseNum(g('r2').value)/100, r3 = parseNum(g('r3').value)/100, r4 = parseNum(g('r4').value)/100;
-    const cg = ((1+(r1||0))*(1+(r2||0))*(1+(r3||0))*(1+(r4||0))-1)*100;
-    g('cumOut').textContent = pct(cg);
-    const cgClass = classifyGrowth(cg);
-    g('growthClass').textContent = cgClass;
+// Net-debt / EBITDA  (avoid double counting LT debt)
+const std = parseNum(g('std').value);
+const cpltd = parseNum(g('cpltd').value);
+const ltd = parseNum(g('ltd0').value);
+const termd = parseNum(g('termdebt').value);
+const cash = parseNum(g('cash').value);
+const ebitda = parseNum(g('ebitda').value);
 
-    // WACC comparison
-    const wacc = parseNum(g('wacc').value);
-    if (g('wacc').value.trim().length){
-      const spread = roic - (wacc||0);
-      g('spread').textContent = spread.toFixed(2) + '%';
-      if (spread > 0.5){
-        g('valueFlag').textContent = 'Value creating';
-        g('valueFlag').className = 'chip ok';
-        g('notes').textContent = 'ROIC exceeds WACC. Positive spread.';
-      }else if (spread >= -0.5 && spread <= 0.5){
-        g('valueFlag').textContent = 'About break-even';
-        g('valueFlag').className = 'chip warn';
-        g('notes').textContent = 'ROIC roughly equals WACC.';
-      }else{
-        g('valueFlag').textContent = 'Value destroying';
-        g('valueFlag').className = 'chip bad';
-        g('notes').textContent = 'ROIC below WACC. Negative spread.';
-      }
-    }else{
-      g('spread').textContent = '—';
-      g('valueFlag').textContent = '—';
-      g('valueFlag').className = 'chip';
-      g('notes').textContent = 'Enter a WACC to see value creation or destruction.';
-    }
+// prefer whichever LT debt field is filled
+const longDebt = Number.isFinite(ltd) ? ltd : (Number.isFinite(termd) ? termd : 0);
+const netDebt = (std || 0) + (cpltd || 0) + longDebt - (cash || 0);
+const ndRatio = ebitda !== 0 ? netDebt / ebitda : 0;
+g('ndebtOut').textContent = fix(ndRatio, 2);
+
+// ROIC  (use operating invested capital, excluding non-interest-bearing CL and excess cash)
+const EBIT = parseNum(g('ebit').value);
+const taxExp = parseNum(g('tax').value);
+
+// simple NOPAT proxy; keep your input semantics
+const NOPAT = (EBIT || 0) - (taxExp || 0);
+
+const assets = parseNum(g('assets0').value);
+const cl = parseNum(g('cl0').value);
+
+// non-interest-bearing current liabilities ≈ total CL − interest-bearing pieces
+const ibcl = (std || 0) + (cpltd || 0);
+const nibcl = Number.isFinite(cl) ? Math.max(0, cl - ibcl) : 0;
+
+// invested capital ≈ Assets − Cash − NIBCL
+const invested = (assets || 0) - (cash || 0) - nibcl;
+
+const roic = invested !== 0 ? (NOPAT / invested) * 100 : 0;
+g('roicOut').textContent = pct(roic);
   }
 
   // Compute ALL + highlight missing
