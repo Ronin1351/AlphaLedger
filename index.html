@@ -1276,97 +1276,110 @@ runFmpFetchViaDebug = async function(){
   // Shared state for verdict
   const V = { fscore: null, roic: null, spread: null, growthPct: null, growthClass: '—' };
 
-  function computeVerdict(){
-    // Pull numbers from existing DOM/state
-    try{
-      const scoreText = (document.getElementById('totalScore')?.textContent||'').split('/')[0].trim();
-      const fscore = parseFloat(scoreText);
-      const spreadTxt = (document.getElementById('spread')?.textContent||'').replace('%','').trim();
-      const roicTxt = (document.getElementById('roicOut')?.textContent||'').replace('%','').trim();
-      const cgTxt = (document.getElementById('cumOut')?.textContent||'').replace('%','').trim();
-      const gClass = (document.getElementById('growthClass')?.textContent||'—').trim();
+ <script>
+// Shared state for verdict
+const V = { fscore: null, roic: null, spread: null, growthPct: null, growthClass: '—' };
 
-      V.fscore = Number.isFinite(parseFloat(fscore)) ? parseFloat(fscore) : null;
-      V.spread = Number.isFinite(parseFloat(spreadTxt)) ? parseFloat(spreadTxt) : null;
-      V.roic = Number.isFinite(parseFloat(roicTxt)) ? parseFloat(roicTxt) : null;
-      V.growthPct = Number.isFinite(parseFloat(cgTxt)) ? parseFloat(cgTxt) : null;
-      V.growthClass = gClass;
+function computeVerdict(){
+  try{
+    // Pull latest numbers already rendered by Compute buttons / live calcs
+    const scoreText = (document.getElementById('totalScore')?.textContent||'').split('/')[0].trim();
+    V.fscore = Number.isFinite(parseFloat(scoreText)) ? parseFloat(scoreText) : null;
 
-      const vLabel = document.getElementById('verdictLabel');
-      const vBadge = document.getElementById('verdictBadge');
-      const vEmoji = document.getElementById('verdictEmoji');
-      const vReason = document.getElementById('verdictReason');
-      const vFs = document.getElementById('vFscore');
-      const vSp = document.getElementById('vSpread');
-      const vGc = document.getElementById('vGrowthClass');
-      const vGn = document.getElementById('vGrowthNum');
+    const spreadTxt = (document.getElementById('spread')?.textContent||'').replace('%','').trim();
+    V.spread = Number.isFinite(parseFloat(spreadTxt)) ? parseFloat(spreadTxt) : null;
 
-      vFs.textContent = (V.fscore!=null) ? V.fscore + ' / 9' : '—';
-      vSp.textContent = (V.spread!=null) ? V.spread.toFixed(2) + '%' : '—';
-      vGc.textContent = V.growthClass || '—';
-      vGn.textContent = (V.growthPct!=null) ? V.growthPct.toFixed(2) + '%' : '—';
+    const roicTxt = (document.getElementById('roicOut')?.textContent||'').replace('%','').trim();
+    V.roic = Number.isFinite(parseFloat(roicTxt)) ? parseFloat(roicTxt) : null;
 
-      // If missing key pieces, show neutral
-      if (V.fscore==null || V.spread==null || V.growthPct==null){
-        vLabel.textContent = 'Needs inputs';
-        vEmoji.textContent = '—';
-        vReason.textContent = 'Fetch or fill fields, enter WACC, then press Compute.';
-        vBadge.className = 'kpi na';
-        return;
-      }
+    const cgTxt = (document.getElementById('cumOut')?.textContent||'').replace('%','').trim();
+    V.growthPct = Number.isFinite(parseFloat(cgTxt)) ? parseFloat(cgTxt) : null;
 
-      // Buckets
-      const fBucket = (V.fscore >= 7) ? 'strong' : (V.fscore >= 4 ? 'avg' : 'weak');
-      const sBucket = (V.spread > 2) ? 'positive' : (V.spread < -1 ? 'negative' : 'flat');
-      const gBucket = (V.growthPct >= 30) ? 'ok' : (V.growthPct >= 25 ? 'borderline' : 'weak');
+    V.growthClass = (document.getElementById('growthClass')?.textContent||'—').trim();
 
-      // Verdict rules
-      let verdict = 'Neutral / Needs work';
-      let emoji = '•';
-      let badge = 'kpi na';
-      let why = [];
+    // Write the four tiles under Composite Verdict
+    const vLabel = document.getElementById('verdictLabel');
+    const vBadge = document.getElementById('verdictBadge');
+    const vEmoji = document.getElementById('verdictEmoji');
+    const vReason = document.getElementById('verdictReason');
+    document.getElementById('vFscore').textContent      = (V.fscore!=null)     ? `${V.fscore} / 9` : '—';
+    document.getElementById('vSpread').textContent      = (V.spread!=null)     ? `${V.spread.toFixed(2)}%` : '—';
+    document.getElementById('vGrowthClass').textContent = V.growthClass || '—';
+    document.getElementById('vGrowthNum').textContent   = (V.growthPct!=null)  ? `${V.growthPct.toFixed(2)}%` : '—';
 
-      if (fBucket=='strong' && sBucket=='positive' && (gBucket=='ok' || gBucket=='borderline')){
-        verdict = 'Strong Candidate';
-        emoji = '✓';
-        badge = 'kpi good';
-      } else if ((fBucket=='strong' || fBucket=='avg') && sBucket!='negative' && (gBucket!='weak')){
-        verdict = 'Watch / Conditional Buy';
-        emoji = '◔';
-        badge = 'kpi';
-      } else if (fBucket=='weak' || sBucket=='negative'){
-        verdict = 'Avoid for now';
-        emoji = '×';
-        badge = 'kpi bad';
-      }
+    // If anything essential is missing, show neutral state
+    if (V.fscore==null || V.spread==null || V.growthPct==null){
+      vLabel.textContent = 'Needs inputs';
+      vEmoji.textContent = '—';
+      vBadge.className = 'kpi na';
+      vReason.textContent = 'Fetch/fill fields, enter WACC, then Compute.';
+      return;
+    }
 
-      // Reasons
-      why.push(`F‑Score ${V.fscore}/9 (${fBucket})`);
-      why.push(`Spread ${V.spread.toFixed(2)}% (${sBucket})`);
-      why.push(`Growth ${V.growthPct.toFixed(2)}% (${gBucket}; ${V.growthClass})`);
+    // Buckets aligned with Snapshot chips
+    const fBucket = (V.fscore >= 7) ? 'strong' : (V.fscore >= 4 ? 'avg' : 'weak');
+    const sBucket = (V.spread > 0.5) ? 'positive' : (V.spread < -0.5 ? 'negative' : 'flat'); // ±0.5% = about break-even
+    const gBucket = (V.growthPct >= 30) ? 'ok' : (V.growthPct >= 25 ? 'borderline' : 'weak');
 
-      vLabel.textContent = verdict;
-      vEmoji.textContent = emoji;
-      vBadge.className = badge;
-      vReason.textContent = why.join(' • ');
-    }catch(e){ /* no-op */ }
-  }
+    // Verdict rules
+    let verdict = 'Neutral / Needs work';
+    let emoji = '•';
+    let badge = 'kpi na';
 
-  // Patch compute functions to also compute verdict
-  const __old_computeAll = computeAll;
-  computeAll = function(){ __old_computeAll(); computeVerdict(); };
+    if (fBucket==='strong' && sBucket==='positive' && (gBucket==='ok' || gBucket==='borderline')){
+      verdict = 'Strong Candidate';
+      emoji = '✓';
+      badge = 'kpi good';
+    } else if ((fBucket==='strong' || fBucket==='avg') && sBucket!=='negative' && gBucket!=='weak'){
+      verdict = 'Watch / Conditional Buy';
+      emoji = '◔';
+      badge = 'kpi';
+    } else if (fBucket==='weak' || sBucket==='negative'){
+      verdict = 'Avoid for now';
+      emoji = '×';
+      badge = 'kpi bad';
+    }
 
-  // Recompute verdict on key inputs
-  ['wacc','r1','r2','r3','r4'].forEach(id=>{
+    // Reasoning line (matches your screenshot phrasing)
+    const why = [
+      `F-Score ${V.fscore}/9 (${fBucket})`,
+      `Spread ${V.spread.toFixed(2)}% (${sBucket})`,
+      `Growth ${V.growthPct.toFixed(2)}% (${gBucket}; ${V.growthClass})`
+    ];
+
+    vLabel.textContent = verdict;
+    vEmoji.textContent = emoji;
+    vBadge.className = badge;
+    vReason.textContent = why.join(' • ');
+  }catch(e){ /* silent */ }
+}
+
+// Ensure verdict always refreshes when inputs change
+// 1) After any full compute
+const __old_computeAll = computeAll;
+computeAll = function(){ __old_computeAll(); computeVerdict(); };
+
+// 2) Live while editing relevant fields (F-Score inputs, ROIC/WACC, growth %)
+(function wireVerdictRecalc(){
+  const ids = [
+    'rev0','rev1','gp0','gp1','assets0','assets1','ni0','ni1','cfo0','cfo1','ltd0','ltd1','ca0','ca1','cl0','cl1','sh0','sh1', // F-Score
+    'ebit','ebitda','tax','cash','std','cpltd','termdebt','cs','cap','re','wacc',                                 // ROIC / spread
+    'r1','r2','r3','r4'                                                                                           // growth
+  ];
+  ids.forEach(id=>{
     const el = document.getElementById(id);
-    if (el) el.addEventListener('input', computeVerdict);
+    if (!el) return;
+    el.addEventListener('input', ()=>{
+      // keep everything in sync
+      if (typeof computeSnapshot === 'function') computeSnapshot();
+      if (typeof computeFScore  === 'function') computeFScore();
+      computeVerdict();
+    });
   });
-  // Also recompute on theme toggle just to be safe (no-op if values unchanged)
-  if (toggle) toggle.addEventListener('change', computeVerdict);
+})();
 
-  // Initial verdict state
-  computeVerdict();
-
+// Initial draw
+computeVerdict();
 </script>
 
 <!-- ===== FMP DEBUG CONSOLE (auto-injected) ===== -->
