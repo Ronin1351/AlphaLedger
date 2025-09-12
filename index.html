@@ -1412,160 +1412,236 @@ runFmpFetchViaDebug = async function(){
   </div>
 </section>
 <!-- ===== /FMP DEBUG CONSOLE ===== -->
+	  <script>
+/* Minimal debug utility */
+const DBG = (() => {
+  const state = { lines: [], shown: false };
+  const els = {};
+  function qs(id){ return document.getElementById(id); }
+  function init(){
+    els.box = qs('dbg');
+    els.live = qs('dbg-live');
+    els.net = qs('dbg-net')?.querySelector('tbody');
+    qs('dbg-copy')?.addEventListener('click', () => {
+      const text = state.lines.join('\n');
+      navigator.clipboard.writeText(text);
+    });
+    qs('dbg-clear')?.addEventListener('click', () => {
+      state.lines = []; els.live.textContent=''; els.net.innerHTML='';
+    });
+    window.addEventListener('keydown', e => {
+      if (e.altKey && e.key.toLowerCase()==='d') {
+        state.shown = !state.shown;
+        els.box.style.display = state.shown ? '' : 'none';
+        if (state.shown) els.box.open = true;
+      }
+    });
+  }
+  function log(msg){
+    const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    state.lines.push(line);
+    if (els.live) { els.live.textContent += line + '\n'; }
+    // keep last ~400 lines
+    if (state.lines.length > 400) state.lines.splice(0, state.lines.length - 400);
+  }
+  function netRow({label,status,ms,bytes,url}){
+    if (!els.net) return;
+    const tr = document.createElement('tr');
+    const cells = [
+      new Date().toLocaleTimeString(), label, status, ms, bytes, url
+    ];
+    cells.forEach(v => {
+      const td = document.createElement('td');
+      td.textContent = String(v ?? '');
+      td.style.borderTop = '1px solid rgba(255,255,255,.08)';
+      td.style.padding = '4px 6px';
+      tr.appendChild(td);
+    });
+    els.net.appendChild(tr);
+  }
+  async function fetchTrace(url, opts={}, label=''){
+    const t0 = performance.now();
+    let status = 'ERR', bytes = 0;
+    try {
+      const r = await fetch(url, opts);
+      status = r.status;
+      const ct = r.headers.get('content-type') || '';
+      const textLike = !ct.includes('application/json');
+      const data = textLike ? await r.text() : await r.json();
+      const raw = textLike ? data : JSON.stringify(data);
+      bytes = (r.headers.get('content-length') ? Number(r.headers.get('content-length')) : raw.length || 0);
+      netRow({label, status, ms: Math.round(performance.now()-t0), bytes, url: (typeof url==='string'? url : url.url)});
+      return { ok: r.ok, status: r.status, data };
+    } catch (e) {
+      netRow({label, status, ms: Math.round(performance.now()-t0), bytes, url: (typeof url==='string'? url : url.url)});
+      log(`Error ${label}: ${e.message || e}`);
+      return { ok:false, status:'ERR', data:null };
+    }
+  }
+  function field(name, info){ log(`Field ${name}: ${info}`); }
+  document.addEventListener('DOMContentLoaded', init);
+  return { log, fetch: fetchTrace, field };
+})();
+</script>
+
 <script>
 (() => {
-  // === SEC client (Vercel proxy) ===
-  const SEC_BASE = `${location.origin}/api`; // no hardcoding to a production domain
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-  // minimal, local alert sink (uses your #alerts if present)
-  function notify(msg) {
-    const box = document.getElementById('alerts');
-    if (box) {
-      const div = document.createElement('div');
-      div.className = 'alert warn';
-      div.textContent = msg;
-      box.appendChild(div);
-    } else {
-      console.warn('[SEC]', msg);
-    }
-  }
-
-  // helpers
+  const SEC_BASE = `${location.origin}/api`;
   const byId = (id) => document.getElementById(id);
-  const setVal = (id, v) => { const el = byId(id); if (el) el.value = (v ?? ''); };
-  const parseNum = (v) => {
-    if (v === null || v === undefined) return NaN;
-    if (typeof v === 'number') return v;
-    const s = (v+'').replace(/,/g,'').trim();
-    const n = parseFloat(s);
-    return Number.isFinite(n) ? n : NaN;
+
+  const TAGS = {
+    rev: ['RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenues'],
+    gp:  ['GrossProfit'],
+    assets: ['Assets'],
+    ni: ['NetIncomeLoss'],
+    cfo: ['NetCashProvidedByUsedInOperatingActivities'],
+    ltd: ['LongTermDebtNoncurrent','LongTermDebtAndCapitalLeaseObligations','LongTermDebt'],
+    ca: ['AssetsCurrent'],
+    cl: ['LiabilitiesCurrent'],
+    sh: ['WeightedAverageNumberOfDilutedSharesOutstanding','WeightedAverageNumberOfSharesOutstandingBasic','WeightedAverageNumberOfSharesOutstandingBasicAndDiluted','CommonStockSharesOutstanding']
   };
 
-  // field map (current, prior)
-  const MAP = {
-    rev: { tags:['RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenues'], unit:'USD' },
-    gp:  { tags:['GrossProfit'], unit:'USD', compute: async (cik) => {
-            const rev = await fetchConcept(cik, ['RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenues'], 'USD');
-            const cogs = await fetchConcept(cik, ['CostOfGoodsAndServicesSold','CostOfRevenue'], 'USD');
-            return (rev && cogs) ? [ (rev[0]??0)-(cogs[0]??0), (rev[1]??0)-(cogs[1]??0) ] : null;
-          }},
-    assets:{ tags:['Assets'], unit:'USD' },
-    ni:   { tags:['NetIncomeLoss'], unit:'USD' },
-    cfo:  { tags:['NetCashProvidedByUsedInOperatingActivities'], unit:'USD' },
-    ltd:  { tags:['LongTermDebtNoncurrent','LongTermDebtAndCapitalLeaseObligations','LongTermDebt'], unit:'USD' },
-    ca:   { tags:['AssetsCurrent'], unit:'USD' },
-    cl:   { tags:['LiabilitiesCurrent'], unit:'USD' },
-    sh:   { tags:[
-            'WeightedAverageNumberOfDilutedSharesOutstanding',
-            'WeightedAverageNumberOfSharesOutstandingBasic',
-            'WeightedAverageNumberOfSharesOutstandingBasicAndDiluted'
-          ], unit:'shares' },
-  };
-
-  // robust ticker reader
-  function getTicker() {
-    const cand = document.querySelector('#ticker, input[name*="ticker" i], input[placeholder*="ticker" i]');
-    return (cand?.value || '').trim().toUpperCase();
+  function getTicker(){
+    const t = document.querySelector('#ticker, input[name*=ticker i]');
+    return (t?.value || '').trim().toUpperCase();
   }
-
-  // CIK lookup via your Vercel proxy
   function padCIK(n){ n = String(n||'').replace(/\D/g,''); return n.padStart(10,'0'); }
+
   async function tickerToCIK(symbol){
-    try {
-      const r = await fetch(`${SEC_BASE}/sec-tickers`);
-      if (!r.ok) throw new Error(`sec-tickers ${r.status}`);
-      const data = await r.json();
-      const hit = Object.values(data).find(x => (x.ticker||'').toUpperCase() === symbol.toUpperCase());
-      return hit ? padCIK(hit.cik_str) : null;
-    } catch (e) {
-      notify(`SEC tickers fetch failed: ${e.message||e}`);
-      return null;
-    }
+    const r = await DBG.fetch(`${SEC_BASE}/sec-tickers`, {}, 'sec-tickers');
+    if (!r.ok) throw new Error(`sec-tickers ${r.status}`);
+    const data = r.data;
+    const hit = Object.values(data).find(x => (x.ticker||'').toUpperCase() === symbol.toUpperCase());
+    return hit ? padCIK(hit.cik_str) : null;
   }
 
-  // fetch two latest annual values for a concept
-  async function fetchConcept(cik, tags, unitKey){
-    const FORM_ANNUALS = /^(10-K|10-K\/A|10-KT|20-F|40-F)/i;
-    for (const tag of tags){
-      try {
-        const r = await fetch(`${SEC_BASE}/sec-companyconcept?cik=${encodeURIComponent(cik)}&tag=${encodeURIComponent(tag)}`);
-        if (!r.ok) { await sleep(150); continue; }
-        const j = await r.json();
-        const series = j?.units?.[unitKey];
-        if (!Array.isArray(series)) { await sleep(120); continue; }
+  function pickTwoAnnual(series){
+    if (!Array.isArray(series)) return null;
+    const annual = series.filter(x => x.fp === 'FY' || /10-K|20-F|40-F/i.test(x.form))
+                         .sort((a,b)=> (b.fy||0)-(a.fy||0) || new Date(b.end)-new Date(a.end));
+    const out=[], seen=new Set();
+    for (const x of annual){
+      const key = x.fy || x.end;
+      if (!seen.has(key)) { out.push(x); seen.add(key); }
+      if (out.length===2) break;
+    }
+    return out.length ? [out[0].val ?? null, (out[1]?.val) ?? null] : null;
+  }
 
-        let candidates = series.filter(x => FORM_ANNUALS.test(x.form));
-        if (!candidates.length) candidates = series.filter(x => !/^10-Q/i.test(x.form));
-
-        candidates.sort((a,b)=> (b.fy||0)-(a.fy||0) || new Date(b.end)-new Date(a.end));
-
-        const seen = new Set(), out = [];
-        for (const x of candidates){
-          const key = x.fy || x.end || x.start || `${x.fy}-${x.end}`;
-          if (!seen.has(key)) { out.push(x); seen.add(key); }
-          if (out.length === 2) break;
+  function findPair(facts, tagList){
+    for (const tag of tagList){
+      const obj = facts.us_gaap?.[tag];
+      if (!obj || !obj.units) continue;
+      // Preferred units first
+      const pref = ['USD','shares','pure'];
+      for (const want of pref){
+        if (obj.units[want]) {
+          const p = pickTwoAnnual(obj.units[want]);
+          if (p) { return {pair:p, tag, unit:want}; }
         }
-        if (out.length) return [out[0].val ?? null, (out[1]?.val) ?? null];
-      } catch(e) {
-        notify(`SEC concept ${tag} failed: ${e.message||e}`);
+      }
+      // Any unit
+      for (const [unit, arr] of Object.entries(obj.units)){
+        const p = pickTwoAnnual(arr);
+        if (p) { return {pair:p, tag, unit}; }
       }
     }
     return null;
   }
 
-  function writePair(k, vals){
-    if (!vals) return;
-    const map = {rev:['rev0','rev1'], gp:['gp0','gp1'], assets:['assets0','assets1'], ni:['ni0','ni1'],
-                 cfo:['cfo0','cfo1'], ltd:['ltd0','ltd1'], ca:['ca0','ca1'], cl:['cl0','cl1'], sh:['sh0','sh1']};
-    const [a,b] = map[k] || [];
-    if (a) setVal(a, vals[0]);
-    if (b) setVal(b, vals[1]);
-    if (typeof mark === 'function') { // integrate with your status UI if present
-      const v0 = parseNum(vals[0]); if (Number.isFinite(v0)) mark(a, 'SEC', v0, {force:true});
-      const v1 = parseNum(vals[1]); if (Number.isFinite(v1)) mark(b, 'SEC', v1, {force:true});
+  function setVal(id, v){ const el = byId(id); if (el) el.value = (v ?? ''); }
+  function writePair(label, meta, ids){
+    if (!meta || !meta.pair) { DBG.field(label, 'missing'); return; }
+    const [aId,bId] = ids;
+    const [a,b] = meta.pair;
+    setVal(aId, a); setVal(bId, b);
+    DBG.field(label, `${meta.tag} (${meta.unit}) -> [${a}, ${b}]`);
+  }
+
+  async function populateSEC(){
+    const t = getTicker();
+    if (!t) { DBG.log('Enter a ticker.'); return; }
+    DBG.log(`Fetching SEC data for ${t}…`);
+
+    try {
+      const cik = await tickerToCIK(t);
+      if (!cik) throw new Error('CIK not found');
+
+      const rf = await DBG.fetch(`${SEC_BASE}/sec-companyfacts?cik=${cik}`, {}, 'companyfacts');
+      if (!rf.ok) throw new Error(`companyfacts ${rf.status}`);
+      const facts = rf.data;
+
+      const rev = findPair(facts, TAGS.rev);
+      const gp  = findPair(facts, TAGS.gp);
+      const cogs = findPair(facts, ['CostOfGoodsAndServicesSold','CostOfRevenue']);
+      const assets = findPair(facts, TAGS.assets);
+      const ni  = findPair(facts, TAGS.ni);
+      const cfo = findPair(facts, TAGS.cfo);
+      const ltd = findPair(facts, TAGS.ltd);
+      const ca  = findPair(facts, TAGS.ca);
+      const cl  = findPair(facts, TAGS.cl);
+      const sh  = findPair(facts, TAGS.sh);
+
+      writePair('Revenue', rev, ['rev0','rev1']);
+      if (gp) {
+        writePair('Gross Profit', gp, ['gp0','gp1']);
+      } else if (rev && cogs) {
+        const gpPair = [ (rev.pair[0]??0) - (cogs.pair[0]??0), (rev.pair[1]??0) - (cogs.pair[1]??0) ];
+        setVal('gp0', gpPair[0]); setVal('gp1', gpPair[1]);
+        DBG.field('Gross Profit', `computed from ${rev.tag} - ${cogs.tag} -> [${gpPair[0]}, ${gpPair[1]}]`);
+      } else {
+        DBG.field('Gross Profit', 'missing');
+      }
+
+      writePair('Assets', assets, ['assets0','assets1']);
+      writePair('Net Income', ni, ['ni0','ni1']);
+      writePair('CFO', cfo, ['cfo0','cfo1']);
+      writePair('LT Debt', ltd, ['ltd0','ltd1']);
+      writePair('Current Assets', ca, ['ca0','ca1']);
+      writePair('Current Liabilities', cl, ['cl0','cl1']);
+      writePair('Shares', sh, ['sh0','sh1']);
+
+      if (typeof ensureComputedFallbacks === 'function') ensureComputedFallbacks();
+      if (typeof finalizeStatusAfterFetch === 'function') finalizeStatusAfterFetch();
+      if (typeof computeAll === 'function') computeAll();
+
+      DBG.log(`Done: ${t}`);
+    } catch (e) {
+      DBG.log(`SEC error: ${e.message || e}`);
+      console.error(e);
     }
   }
 
-  async function populateFromSEC(symbol){
-    const t = (symbol || getTicker()).trim().toUpperCase();
-    if (!/^[A-Z.-]{1,6}$/.test(t)) { notify('Enter a valid ticker (1–6 letters)'); return; }
-
-    notify(`Fetching SEC data for ${t}…`);
-    const cik = await tickerToCIK(t);
-    if (!cik) { notify(`CIK not found for ${t}`); return; }
-
-    for (const k of ['rev','gp','assets','ni','cfo','ltd','ca','cl','sh']){
-      let vals = await fetchConcept(cik, MAP[k].tags, MAP[k].unit);
-      if (!vals && MAP[k].compute) vals = await MAP[k].compute(cik);
-      writePair(k, vals);
-      await sleep(220); // polite to SEC
-    }
-
-    if (typeof ensureComputedFallbacks === 'function') ensureComputedFallbacks();
-    if (typeof finalizeStatusAfterFetch === 'function') finalizeStatusAfterFetch();
-    if (typeof computeAll === 'function') computeAll();
-    notify(`Done: ${t}`);
-  }
-
-  // Wire both the button and Alt+S
-  function wireSEC(){
-    const el = document.getElementById('btnSec') || document.getElementById('btn-sec');
-    if (el) el.addEventListener('click', () => populateFromSEC());
+  function wire(){
+    document.getElementById('btnSec')?.addEventListener('click', populateSEC);
     window.addEventListener('keydown', e => {
-      if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); populateFromSEC(); }
+      if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); populateSEC(); }
     });
-    // Expose for console
-    window.__secPopulate = populateFromSEC;
+    window.__secPopulate = populateSEC;
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', wireSEC);
-  } else {
-    wireSEC();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
+  else wire();
 })();
 </script>
+
+<!-- Debug drawer (optional; Alt+D to toggle) -->
+<details id="dbg" style="display:none;margin:12px 0;">
+  <summary>Debug</summary>
+  <div id="dbg-body" style="padding:8px;border:1px dashed rgba(245,158,11,.6);border-radius:8px;">
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <button id="dbg-copy" type="button">Copy log</button>
+      <button id="dbg-clear" type="button">Clear</button>
+    </div>
+    <div id="dbg-live" style="font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap;"></div>
+    <table id="dbg-net" style="width:100%;margin-top:8px;font-size:12px;border-collapse:collapse;">
+      <thead>
+        <tr><th align="left">When</th><th align="left">Label</th><th align="left">Status</th><th align="left">ms</th><th align="left">Bytes</th><th align="left">URL</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</details>
 
 </body>
 </html>
