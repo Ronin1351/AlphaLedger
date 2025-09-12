@@ -1414,132 +1414,41 @@ runFmpFetchViaDebug = async function(){
 <!-- ===== /FMP DEBUG CONSOLE ===== -->
 <script>
 (() => {
-  const SEC_BASE = 'https://YOURAPP.vercel.app/api'; // <-- change to your Vercel base
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const byId = id => document.getElementById(id);
-  const setVal = (id, v) => { const el = byId(id); if (el) el.value = v ?? ''; };
+  // === SEC client (Vercel proxy) ===
+  const SEC_BASE = `${location.origin}/api`; // no hardcoding to a production domain
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-  // --- map our fields to SEC tags + expected unit ---
-  const MAP = {
-    rev: { tags:['RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenues'], unit:'USD' },
-    gp:  { tags:['GrossProfit'], unit:'USD', compute: async (cik) => { // fallback: Rev - COGS
-            const rev = await fetchConcept(cik, ['RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenues'], 'USD');
-            const cogs = await fetchConcept(cik, ['CostOfGoodsAndServicesSold','CostOfRevenue'], 'USD');
-            if (rev && cogs) return zip2(rev, cogs, (a,b)=>a-b); return null;
-          }},
-    assets:{ tags:['Assets'], unit:'USD' },
-    ni:   { tags:['NetIncomeLoss'], unit:'USD' },
-    cfo:  { tags:['NetCashProvidedByUsedInOperatingActivities'], unit:'USD' },
-    ltd:  { tags:['LongTermDebtNoncurrent','LongTermDebtAndCapitalLeaseObligations','LongTermDebt'], unit:'USD' },
-    ca:   { tags:['AssetsCurrent'], unit:'USD' },
-    cl:   { tags:['LiabilitiesCurrent'], unit:'USD' },
-    sh:   { tags:['WeightedAverageNumberOfDilutedSharesOutstanding','WeightedAverageNumberOfSharesOutstandingBasic','WeightedAverageNumberOfSharesOutstandingBasicAndDiluted'], unit:'shares' },
+  // minimal, local alert sink (uses your #alerts if present)
+  function notify(msg) {
+    const box = document.getElementById('alerts');
+    if (box) {
+      const div = document.createElement('div');
+      div.className = 'alert warn';
+      div.textContent = msg;
+      box.appendChild(div);
+    } else {
+      console.warn('[SEC]', msg);
+    }
+  }
+
+  // helpers
+  const byId = (id) => document.getElementById(id);
+  const setVal = (id, v) => { const el = byId(id); if (el) el.value = (v ?? ''); };
+  const parseNum = (v) => {
+    if (v === null || v === undefined) return NaN;
+    if (typeof v === 'number') return v;
+    const s = (v+'').replace(/,/g,'').trim();
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : NaN;
   };
 
-  function padCIK(n) { n = String(n).replace(/\D/g,''); return n.padStart(10,'0'); }
-  async function tickerToCIK(symbol) {
-    const r = await fetch(`${SEC_BASE}/sec-tickers`);
-    const data = await r.json(); // {0:{cik_str, ticker, title}, 1:{...}, ...}
-    const list = Object.values(data);
-    const hit = list.find(x => x.ticker?.toUpperCase() === symbol.toUpperCase());
-    return hit ? padCIK(hit.cik_str) : null;
-  }
-
-  // fetch a single concept; return two most recent ANNUAL values [curr, prior]
-  async function fetchConcept(cik, tags, unitKey) {
-    for (const tag of tags) {
-      const url = `${SEC_BASE}/sec-companyconcept?cik=${cik}&tag=${encodeURIComponent(tag)}`;
-      const r = await fetch(url);
-      if (!r.ok) { await sleep(200); continue; }
-      const j = await r.json();
-      const arr = (j.units && j.units[unitKey]) || null;
-      if (!Array.isArray(arr)) { await sleep(200); continue; }
-      const annual = arr.filter(x => x.fp === 'FY' && /^10-K/i.test(x.form));
-      if (!annual.length) continue;
-      annual.sort((a,b) => b.fy - a.fy || new Date(b.end) - new Date(a.end));
-      const uniq = []; const seen = new Set();
-      for (const x of annual) { if (!seen.has(x.fy)) { uniq.push(x); seen.add(x.fy); } }
-      if (uniq.length) return [uniq[0].val, (uniq[1]||{}).val ?? null];
-    }
-    return null;
-  }
-
-  // element-wise combine two arrays of [curr,prior]
-  function zip2(a,b,fn){ if(!a||!b) return null; return [fn(a[0],b[0]), fn(a[1]??0,b[1]??0)]; }
-
-  async function populateFromSEC(symbol) {
-    const ticker = symbol || (document.querySelector('#ticker')?.value || '').trim();
-    if (!ticker) { alert('Enter ticker first'); return; }
-
-    // 1) resolve CIK
-    const cik = await tickerToCIK(ticker);
-    if (!cik) { alert('CIK not found for '+ticker); return; }
-
-    // 2) fetch each metric sequentially (rate-friendly)
-    const order = ['rev','gp','assets','ni','cfo','ltd','ca','cl','sh'];
-    for (const k of order) {
-      const m = MAP[k];
-      let vals = await fetchConcept(cik, m.tags, m.unit);
-      if (!vals && m.compute) vals = await m.compute(cik);
-      if (vals) {
-        // curr -> *0, prior -> *1
-        if (k==='rev'){ setVal('rev0', vals[0]); setVal('rev1', vals[1]); }
-        if (k==='gp'){ setVal('gp0', vals[0]); setVal('gp1', vals[1]); }
-        if (k==='assets'){ setVal('assets0', vals[0]); setVal('assets1', vals[1]); }
-        if (k==='ni'){ setVal('ni0', vals[0]); setVal('ni1', vals[1]); }
-        if (k==='cfo'){ setVal('cfo0', vals[0]); setVal('cfo1', vals[1]); }
-        if (k==='ltd'){ setVal('ltd0', vals[0]); setVal('ltd1', vals[1]); }
-        if (k==='ca'){ setVal('ca0', vals[0]); setVal('ca1', vals[1]); }
-        if (k==='cl'){ setVal('cl0', vals[0]); setVal('cl1', vals[1]); }
-        if (k==='sh'){ setVal('sh0', vals[0]); setVal('sh1', vals[1]); }
-      } else {
-        // mark as manual if missing
-        const ids = {rev:['rev0','rev1'], gp:['gp0','gp1'], assets:['assets0','assets1'],
-                     ni:['ni0','ni1'], cfo:['cfo0','cfo1'], ltd:['ltd0','ltd1'],
-                     ca:['ca0','ca1'], cl:['cl0','cl1'], sh:['sh0','sh1']}[k];
-        ids.forEach(id => setVal(id, ''));
-      }
-      await sleep(250); // be polite to SEC
-    }
-  }
-
-  // Alt+S runs SEC fetch (no UI changes required)
-  window.addEventListener('keydown', e => {
-    if (e.altKey && e.key.toLowerCase() === 's') {
-      e.preventDefault(); populateFromSEC();
-    }
-  });
-
-  // If you later add a button with id="btn-sec", this auto-wires it:
-  const btn = document.getElementById('btn-sec');
-  if (btn) btn.addEventListener('click', () => populateFromSEC());
-
-  // expose for console testing:
-  window.__secPopulate = populateFromSEC;
-})();
-</script>
-<script>
-(() => {
-  const SEC_BASE = 'https://alpha-ledger.vercel.app/api'; // your Vercel base
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const byId = (id) => document.getElementById(id);
-  const DEBUG = false;
-
-  // Try multiple ways to read the ticker so we don't depend on a single id.
-  function getTicker() {
-    const cand = document.querySelector(
-      '#ticker, input[name*="ticker" i], input[placeholder*="ticker" i]'
-    );
-    return (cand?.value || '').trim().toUpperCase();
-  }
-
-  // Map our fields to SEC concepts (with fallbacks)
+  // field map (current, prior)
   const MAP = {
     rev: { tags:['RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenues'], unit:'USD' },
     gp:  { tags:['GrossProfit'], unit:'USD', compute: async (cik) => {
             const rev = await fetchConcept(cik, ['RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenues'], 'USD');
             const cogs = await fetchConcept(cik, ['CostOfGoodsAndServicesSold','CostOfRevenue'], 'USD');
-            return (rev && cogs) ? [rev[0]-cogs[0], (rev[1]??0)-(cogs[1]??0)] : null;
+            return (rev && cogs) ? [ (rev[0]??0)-(cogs[0]??0), (rev[1]??0)-(cogs[1]??0) ] : null;
           }},
     assets:{ tags:['Assets'], unit:'USD' },
     ni:   { tags:['NetIncomeLoss'], unit:'USD' },
@@ -1547,41 +1456,60 @@ runFmpFetchViaDebug = async function(){
     ltd:  { tags:['LongTermDebtNoncurrent','LongTermDebtAndCapitalLeaseObligations','LongTermDebt'], unit:'USD' },
     ca:   { tags:['AssetsCurrent'], unit:'USD' },
     cl:   { tags:['LiabilitiesCurrent'], unit:'USD' },
-    sh:   { tags:['WeightedAverageNumberOfDilutedSharesOutstanding','WeightedAverageNumberOfSharesOutstandingBasic','WeightedAverageNumberOfSharesOutstandingBasicAndDiluted'], unit:'shares' },
+    sh:   { tags:[
+            'WeightedAverageNumberOfDilutedSharesOutstanding',
+            'WeightedAverageNumberOfSharesOutstandingBasic',
+            'WeightedAverageNumberOfSharesOutstandingBasicAndDiluted'
+          ], unit:'shares' },
   };
 
-  function padCIK(n){ n = String(n||'').replace(/\D/g,''); return n.padStart(10,'0'); }
-  async function tickerToCIK(symbol){
-    const r = await fetch(`${SEC_BASE}/sec-tickers`);
-    if (!r.ok) return null;
-    const data = await r.json();
-    const hit = Object.values(data).find(x => (x.ticker||'').toUpperCase() === symbol.toUpperCase());
-    return hit ? padCIK(hit.cik_str) : null;
+  // robust ticker reader
+  function getTicker() {
+    const cand = document.querySelector('#ticker, input[name*="ticker" i], input[placeholder*="ticker" i]');
+    return (cand?.value || '').trim().toUpperCase();
   }
 
-  // Pull two latest ANNUAL values. Be permissive about form types (10-K, 10-K/A, 10-KT, 20-F, 40-F).
+  // CIK lookup via your Vercel proxy
+  function padCIK(n){ n = String(n||'').replace(/\D/g,''); return n.padStart(10,'0'); }
+  async function tickerToCIK(symbol){
+    try {
+      const r = await fetch(`${SEC_BASE}/sec-tickers`);
+      if (!r.ok) throw new Error(`sec-tickers ${r.status}`);
+      const data = await r.json();
+      const hit = Object.values(data).find(x => (x.ticker||'').toUpperCase() === symbol.toUpperCase());
+      return hit ? padCIK(hit.cik_str) : null;
+    } catch (e) {
+      notify(`SEC tickers fetch failed: ${e.message||e}`);
+      return null;
+    }
+  }
+
+  // fetch two latest annual values for a concept
   async function fetchConcept(cik, tags, unitKey){
     const FORM_ANNUALS = /^(10-K|10-K\/A|10-KT|20-F|40-F)/i;
     for (const tag of tags){
-      const r = await fetch(`${SEC_BASE}/sec-companyconcept?cik=${cik}&tag=${encodeURIComponent(tag)}`);
-      if (!r.ok) { DEBUG && console.warn('concept fail', tag, r.status); await sleep(150); continue; }
-      const j = await r.json();
-      const series = j?.units?.[unitKey];
-      if (!Array.isArray(series)) { await sleep(120); continue; }
+      try {
+        const r = await fetch(`${SEC_BASE}/sec-companyconcept?cik=${encodeURIComponent(cik)}&tag=${encodeURIComponent(tag)}`);
+        if (!r.ok) { await sleep(150); continue; }
+        const j = await r.json();
+        const series = j?.units?.[unitKey];
+        if (!Array.isArray(series)) { await sleep(120); continue; }
 
-      let candidates = series.filter(x => FORM_ANNUALS.test(x.form));
-      // Fallback: if no annuals, take last 2 non-quarterly entries
-      if (!candidates.length) candidates = series.filter(x => !/^10-Q/i.test(x.form));
+        let candidates = series.filter(x => FORM_ANNUALS.test(x.form));
+        if (!candidates.length) candidates = series.filter(x => !/^10-Q/i.test(x.form));
 
-      candidates.sort((a,b)=> (b.fy||0) - (a.fy||0) || new Date(b.end)-new Date(a.end));
+        candidates.sort((a,b)=> (b.fy||0)-(a.fy||0) || new Date(b.end)-new Date(a.end));
 
-      const seen = new Set(), out = [];
-      for (const x of candidates){
-        const key = x.fy || x.end || x.start || Math.random();
-        if (!seen.has(key)) { out.push(x); seen.add(key); }
-        if (out.length === 2) break;
+        const seen = new Set(), out = [];
+        for (const x of candidates){
+          const key = x.fy || x.end || x.start || `${x.fy}-${x.end}`;
+          if (!seen.has(key)) { out.push(x); seen.add(key); }
+          if (out.length === 2) break;
+        }
+        if (out.length) return [out[0].val ?? null, (out[1]?.val) ?? null];
+      } catch(e) {
+        notify(`SEC concept ${tag} failed: ${e.message||e}`);
       }
-      if (out.length) return [out[0].val, (out[1]||{}).val ?? null];
     }
     return null;
   }
@@ -1590,39 +1518,52 @@ runFmpFetchViaDebug = async function(){
     if (!vals) return;
     const map = {rev:['rev0','rev1'], gp:['gp0','gp1'], assets:['assets0','assets1'], ni:['ni0','ni1'],
                  cfo:['cfo0','cfo1'], ltd:['ltd0','ltd1'], ca:['ca0','ca1'], cl:['cl0','cl1'], sh:['sh0','sh1']};
-    const [a,b] = map[k];
-    const set = (id, v) => {
-      if (typeof mark === 'function') mark(id, 'SEC', v, { force:true });
-      else { const el = byId(id); if (el) el.value = v ?? ''; }
-    };
-    set(a, vals[0]); set(b, vals[1]);
+    const [a,b] = map[k] || [];
+    if (a) setVal(a, vals[0]);
+    if (b) setVal(b, vals[1]);
+    if (typeof mark === 'function') { // integrate with your status UI if present
+      const v0 = parseNum(vals[0]); if (Number.isFinite(v0)) mark(a, 'SEC', v0, {force:true});
+      const v1 = parseNum(vals[1]); if (Number.isFinite(v1)) mark(b, 'SEC', v1, {force:true});
+    }
   }
 
   async function populateFromSEC(symbol){
     const t = (symbol || getTicker()).trim().toUpperCase();
-    if (!/^[A-Z.-]{1,6}$/.test(t)) { alert('Enter a valid ticker'); return; }
+    if (!/^[A-Z.-]{1,6}$/.test(t)) { notify('Enter a valid ticker (1–6 letters)'); return; }
 
+    notify(`Fetching SEC data for ${t}…`);
     const cik = await tickerToCIK(t);
-    if (!cik) { alert('CIK not found for '+t); return; }
+    if (!cik) { notify(`CIK not found for ${t}`); return; }
 
     for (const k of ['rev','gp','assets','ni','cfo','ltd','ca','cl','sh']){
       let vals = await fetchConcept(cik, MAP[k].tags, MAP[k].unit);
       if (!vals && MAP[k].compute) vals = await MAP[k].compute(cik);
       writePair(k, vals);
-      await sleep(220);
+      await sleep(220); // polite to SEC
     }
 
     if (typeof ensureComputedFallbacks === 'function') ensureComputedFallbacks();
     if (typeof finalizeStatusAfterFetch === 'function') finalizeStatusAfterFetch();
     if (typeof computeAll === 'function') computeAll();
+    notify(`Done: ${t}`);
   }
 
-  // Wire button + optional keyboard
-  document.getElementById('btnSec')?.addEventListener('click', () => populateFromSEC());
-  window.__secPopulate = populateFromSEC;
-  window.addEventListener('keydown', e => {
-    if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); populateFromSEC(); }
-  });
+  // Wire both the button and Alt+S
+  function wireSEC(){
+    const el = document.getElementById('btnSec') || document.getElementById('btn-sec');
+    if (el) el.addEventListener('click', () => populateFromSEC());
+    window.addEventListener('keydown', e => {
+      if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); populateFromSEC(); }
+    });
+    // Expose for console
+    window.__secPopulate = populateFromSEC;
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wireSEC);
+  } else {
+    wireSEC();
+  }
 })();
 </script>
 
