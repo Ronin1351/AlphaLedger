@@ -1689,112 +1689,144 @@ function set(id, v){ const el = document.getElementById(id); if (el) el.value = 
     DBG.field(label, `${meta.tag} (${meta.unit}) -> [${a}, ${b}]`);
   }
 
-  async function populateSEC(){
-    const t = getTicker();
-    if (!t){ show('Enter a ticker.'); return; }
- //   show(`Fetching SEC data for ${t}…`); DBG.log(`SEC start ${t}`);
+ async function populateSEC(){
+  const t = getTicker();
+  if (!t){ show('Enter a ticker.'); return; }
+  show(`Fetching SEC data for ${t}…`); if (DBG && DBG.log) DBG.log(`SEC start ${t}`);
 
-    try{
-      const cik = await tickerToCIK(t);
-      if (!cik){ show('CIK not found.'); DBG.log('CIK not found'); return; }
+  try{
+    const cik = await tickerToCIK(t);
+    if (!cik){ show('CIK not found.'); return; }
 
-      const rf = await DBG.fetch(`${SEC_BASE}/sec-companyfacts?cik=${cik}`, {}, 'companyfacts');
-      if (!rf.ok){ show(`SEC companyfacts ${rf.status}`); return; }
-      const facts = rf.data;
+    const rf = await DBG.fetch(`${SEC_BASE}/sec-companyfacts?cik=${cik}`, {}, 'companyfacts');
+    if (!rf.ok){ show(`SEC companyfacts ${rf.status}`); return; }
+    const usgaap = (rf.data && rf.data.facts && rf.data.facts['us-gaap']) ? rf.data.facts['us-gaap'] : {};
 
-      const rev = findPair(facts, TAGS.rev);
-      const gp  = findPair(facts, TAGS.gp);
-      const cogs= findPair(facts, ['CostOfGoodsAndServicesSold','CostOfRevenue']);
-      const assets=findPair(facts, TAGS.assets);
-      const ni   =findPair(facts, TAGS.ni);
-      const cfo  =findPair(facts, TAGS.cfo);
-      const ltd  =findPair(facts, TAGS.ltd);
-      const ca   =findPair(facts, TAGS.ca);
-      const cl   =findPair(facts, TAGS.cl);
-      const sh   =findPair(facts, TAGS.sh);
+    // helpers (scoped to this function)
+    const asMillions = v => Number.isFinite(v) ? v / 1e6 : null;
 
-      writePair('Revenue', rev, ['rev0','rev1']);
-      if (gp){ writePair('Gross Profit', gp, ['gp0','gp1']); }
-      else if (rev && cogs){ const pair=[(rev.pair[0]??0)-(cogs.pair[0]??0),(rev.pair[1]??0)-(cogs.pair[1]??0)]; setVal('gp0',pair[0]); setVal('gp1',pair[1]); DBG.field('Gross Profit', `computed from ${rev.tag} - ${cogs.tag} -> [${pair[0]}, ${pair[1]}]`); }
-      writePair('Assets', assets, ['assets0','assets1']);
-      writePair('Net Income', ni, ['ni0','ni1']);
-      writePair('CFO', cfo, ['cfo0','cfo1']);
-      writePair('LT Debt', ltd, ['ltd0','ltd1']);
-      writePair('Current Assets', ca, ['ca0','ca1']);
-      writePair('Current Liabilities', cl, ['cl0','cl1']);
-      writePair('Shares', sh, ['sh0','sh1']);
-
-      if (typeof ensureComputedFallbacks === 'function') ensureComputedFallbacks();
-      if (typeof finalizeStatusAfterFetch === 'function') finalizeStatusAfterFetch();
-      if (typeof computeAll === 'function') computeAll();
-		// --- Additional section population ---
-
-// EBIT: direct tag; else NI + Interest + Tax
-let EBIT = latestAnnual(facts, EXTRA.ebit);
-if (EBIT == null) {
-  const NI  = latestAnnual(facts, ['NetIncomeLoss']);
-  const INT = latestAnnual(facts, ['InterestExpense','InterestExpenseDebt']);
-  const TAX = latestAnnual(facts, EXTRA.tax);
-  if (NI != null && (INT != null || TAX != null)) EBIT = (NI ?? 0) + (INT ?? 0) + (TAX ?? 0);
-}
-
-// EBITDA: direct tag; else EBIT + D&A
-let EBITDA = latestAnnual(facts, EXTRA.ebitda);
-if (EBITDA == null) {
-  const DA = latestAnnual(facts, EXTRA.da);
-  if (EBIT != null && DA != null) EBITDA = EBIT + DA;
-}
-
-// Income tax expense
-const TAX = latestAnnual(facts, EXTRA.tax);
-
-// Cash & equivalents
-const CASH = latestAnnual(facts, EXTRA.cash);
-
-// Debt pieces
-const STD   = latestAnnual(facts, EXTRA.std);     // short-term or current debt
-const CPLTD = latestAnnual(facts, EXTRA.cpltd);   // current portion of LT debt
-const TERM  = latestAnnual(facts, EXTRA.termdebt);// LT (noncurrent)
-
-// Equity components
-const CSTK = latestAnnual(facts, EXTRA.commonstock);
-const APIC = latestAnnual(facts, EXTRA.apic);
-const RETE = latestAnnual(facts, EXTRA.retained);
-
-// Revenue growth % (last four YoY)
-const revs = revenueSeries(facts, 5); // [Y0,Y-1,Y-2,Y-3,Y-4]
-const g1 = revs.length>=2 ? pct(revs[0], revs[1]) : null;
-const g2 = revs.length>=3 ? pct(revs[1], revs[2]) : null;
-const g3 = revs.length>=4 ? pct(revs[2], revs[3]) : null;
-const g4 = revs.length>=5 ? pct(revs[3], revs[4]) : null;
-
-// Write to inputs — change IDs here if yours differ
-set('ebit', EBIT);
-set('ebitda', EBITDA);
-set('tax', TAX);
-set('cash', CASH);
-
-// Debt pieces
-set('std', STD);
-set('cpltd', CPLTD);
-set('termdebt', TERM);
-
-// Equity components (match your inputs)
-set('cs',  CSTK);   // Common Stock
-set('cap', APIC);   // Capital Surplus (APIC)
-set('re',  RETE);   // Retained Earnings
-
-// Revenue growth % (match your inputs)
-set('r1', g1?.toFixed(2));
-set('r2', g2?.toFixed(2));
-set('r3', g3?.toFixed(2));
-set('r4', g4?.toFixed(2));
-
-    //  show(`Done: ${t}`); DBG.log(`SEC done ${t}`);
-    } catch(e){
-      show(`SEC error: ${e.message || e}`); DBG.log(`SEC error ${e.message || e}`);
+    function latest(tags){
+      for (const tag of tags){
+        const units = usgaap[tag]?.units;
+        if (!units) continue;
+        // prefer USD, then USDm
+        const unitKeys = Object.keys(units).sort((a,b)=>{
+          const rank = u => (u === 'USD') ? 0 : (u === 'USDm' ? 1 : 9);
+          return rank(a) - rank(b);
+        });
+        for (const u of unitKeys){
+          const arr = Array.isArray(units[u]) ? units[u].slice() : [];
+          if (!arr.length) continue;
+          // prefer annuals (10-K / FY)
+          const filt = arr.filter(x => x.form === '10-K' || x.fp === 'FY' || (x.frame && x.frame.includes('FY')));
+          const rows = (filt.length ? filt : arr).sort((a,b) => (a.end > b.end ? -1 : 1));
+          for (const r of rows){
+            const v = Number(r.val);
+            if (Number.isFinite(v)) return (u === 'USD') ? v / 1e6 : v; // millions
+          }
+        }
+      }
+      return null;
     }
+
+    function fySeries(tags, limit=6){
+      const map = new Map(); // fy -> {end,valM}
+      for (const tag of tags){
+        const units = usgaap[tag]?.units;
+        if (!units) continue;
+        for (const [u, arr] of Object.entries(units)){
+          if (!Array.isArray(arr)) continue;
+          if (u !== 'USD' && u !== 'USDm') continue;
+          for (const r of arr){
+            const fy = Number(r.fy);
+            const v = Number(r.val);
+            if (!Number.isFinite(fy) || !Number.isFinite(v)) continue;
+            const valM = (u === 'USD') ? v / 1e6 : v;
+            const prev = map.get(fy);
+            if (!prev || r.end > prev.end) map.set(fy, { fy, end: r.end, val: valM });
+          }
+        }
+      }
+      return Array.from(map.values()).sort((a,b)=>a.fy-b.fy).slice(-limit);
+    }
+
+    // pull values (in millions)
+    const salesSeries = fySeries([
+      'RevenueFromContractWithCustomerExcludingAssessedTax',
+      'SalesRevenueNet',
+      'Revenues'
+    ]);
+
+    const assets0 = latest(['Assets']);
+    const cl0     = latest(['LiabilitiesCurrent']);
+
+    const EBIT    = latest(['OperatingIncomeLoss']);
+    const DA      = latest(['DepreciationAndAmortization','DepreciationDepletionAndAmortization']);
+    const EBITDA  = (EBIT != null && DA != null) ? (EBIT + DA) : null;
+
+    const TAX     = latest(['IncomeTaxExpenseBenefit','IncomeTaxExpense','CurrentIncomeTaxExpenseBenefit']);
+
+    const CASH    = latest(['CashAndCashEquivalentsAtCarryingValue','CashAndCashEquivalentsIncludingRestrictedCash','CashCashEquivalentsAndShortTermInvestments']);
+    const STD     = latest(['ShortTermBorrowings','ShortTermDebt','CommercialPaper']);
+    const CPLTD   = latest(['LongTermDebtCurrent','LongTermDebtAndCapitalLeaseObligationsCurrent']);
+    const TERM    = latest(['LongTermDebtNoncurrent','LongTermDebt']);
+
+    const CSTK    = latest(['CommonStockValue','CommonStock']);
+    const APIC    = latest(['AdditionalPaidInCapital','CapitalSurplus']);
+    const RETE    = latest(['RetainedEarningsAccumulatedDeficit','RetainedEarnings']);
+
+    // build revenue/growth set
+    let rev0 = null, rev4 = null, g1=null, g2=null, g3=null, g4=null;
+    if (salesSeries.length >= 5){
+      const vals = salesSeries.map(x=>x.val);
+      const n = vals.length;
+      rev0 = vals[n-1];
+      rev4 = vals[n-5];
+      const yoY = [];
+      for (let i=n-4;i<n;i++){
+        const prev = vals[i-1];
+        const curr = vals[i];
+        yoY.push(prev > 0 ? ((curr/prev)-1)*100 : null);
+      }
+      [g1,g2,g3,g4] = yoY;
+    } else if (salesSeries.length >= 2){
+      const vals = salesSeries.map(x=>x.val);
+      rev0 = vals[vals.length-1];
+      rev4 = vals[0];
+    }
+
+    // write using the correct setter (populates UI + status grid)
+    if (rev0 != null) setVal('rev0', Number(rev0.toFixed(2)), 'SEC');
+    if (rev4 != null) setVal('rev4', Number(rev4.toFixed(2)), 'SEC');
+
+    if (assets0 != null) setVal('assets0', Number(assets0.toFixed(2)), 'SEC');
+    if (cl0     != null) setVal('cl0',     Number(cl0.toFixed(2)),     'SEC');
+
+    if (EBIT    != null) setVal('ebit',    Number(EBIT.toFixed(2)),    'SEC');
+    if (EBITDA  != null) setVal('ebitda',  Number(EBITDA.toFixed(2)),  'SEC');
+    if (TAX     != null) setVal('tax',     Number(TAX.toFixed(2)),     'SEC');
+
+    if (CASH    != null) setVal('cash',    Number(CASH.toFixed(2)),    'SEC');
+    if (STD     != null) setVal('std',     Number(STD.toFixed(2)),     'SEC');
+    if (CPLTD   != null) setVal('cpltd',   Number(CPLTD.toFixed(2)),   'SEC');
+    if (TERM    != null) setVal('termdebt',Number(TERM.toFixed(2)),    'SEC');
+
+    if (CSTK    != null) setVal('cs',      Number(CSTK.toFixed(2)),    'SEC');
+    if (APIC    != null) setVal('cap',     Number(APIC.toFixed(2)),    'SEC');
+    if (RETE    != null) setVal('re',      Number(RETE.toFixed(2)),    'SEC');
+
+    if (g1 != null) setVal('r1', Number(g1.toFixed(2)), 'SEC');
+    if (g2 != null) setVal('r2', Number(g2.toFixed(2)), 'SEC');
+    if (g3 != null) setVal('r3', Number(g3.toFixed(2)), 'SEC');
+    if (g4 != null) setVal('r4', Number(g4.toFixed(2)), 'SEC');
+
+    show('SEC fields populated. Press Compute All.');
+  }catch(err){
+    if (DBG && DBG.log) DBG.log('SEC error: ' + (err?.message || err));
+    show('SEC error. Check console.');
   }
+}
+
 
   function wire(){
     document.getElementById('btnSec')?.addEventListener('click', populateSEC);
