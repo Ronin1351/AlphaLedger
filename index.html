@@ -1764,5 +1764,100 @@ set('r4', g4?.toFixed(2));
     });
   });
 </script>
+	  <script>
+// --- 1) Map inputs -> status cells (use your existing input IDs)
+const STATUS_MAP = {
+  rev_cur:   { valueSel: '[data-value-for="rev_cur"]',   sourceSel: '[data-source-for="rev_cur"]'   },
+  ni_cur:    { valueSel: '[data-value-for="ni_cur"]',    sourceSel: '[data-source-for="ni_cur"]'    },
+  ca_cur:    { valueSel: '[data-value-for="ca_cur"]',    sourceSel: '[data-source-for="ca_cur"]'    },
+
+  rev_pri:   { valueSel: '[data-value-for="rev_pri"]',   sourceSel: '[data-source-for="rev_pri"]'   },
+  ni_pri:    { valueSel: '[data-value-for="ni_pri"]',    sourceSel: '[data-source-for="ni_pri"]'    },
+  ca_pri:    { valueSel: '[data-value-for="ca_pri"]',    sourceSel: '[data-source-for="ca_pri"]'    },
+
+  ebit:      { valueSel: '[data-value-for="ebit"]',      sourceSel: '[data-source-for="ebit"]'      },
+  cash:      { valueSel: '[data-value-for="cash"]',      sourceSel: '[data-source-for="cash"]'      },
+  termdebt:  { valueSel: '[data-value-for="termdebt"]',  sourceSel: '[data-source-for="termdebt"]'  },
+
+  std:       { valueSel: '[data-value-for="std"]',       sourceSel: '[data-source-for="std"]'       },
+  cpltd:     { valueSel: '[data-value-for="cpltd"]',     sourceSel: '[data-source-for="cpltd"]'     },
+  cs:        { valueSel: '[data-value-for="cs"]',        sourceSel: '[data-source-for="cs"]'        },
+  cap:       { valueSel: '[data-value-for="cap"]',       sourceSel: '[data-source-for="cap"]'       },
+  re:        { valueSel: '[data-value-for="re"]',        sourceSel: '[data-source-for="re"]'        },
+
+  r1:        { valueSel: '[data-value-for="r1"]',        sourceSel: '[data-source-for="r1"]'        },
+  r2:        { valueSel: '[data-value-for="r2"]',        sourceSel: '[data-source-for="r2"]'        },
+  r3:        { valueSel: '[data-value-for="r3"]',        sourceSel: '[data-source-for="r3"]'        },
+  r4:        { valueSel: '[data-value-for="r4"]',        sourceSel: '[data-source-for="r4"]'        }
+};
+
+// --- 2) Central place to remember how a field was filled
+const FIELD_SOURCES = {};  // e.g., { rev_cur: 'SEC', std: 'SEC: DebtCurrent', cs: 'Manual', ... }
+
+// --- 3) Safe helpers
+function getVal(id){
+  const el = document.getElementById(id);
+  if (!el) return '';
+  const v = ('value' in el) ? el.value : el.textContent;
+  return v ?? '';
+}
+
+function setVal(id, v, source){ // drop-in setter you can use anywhere
+  const el = document.getElementById(id);
+  if (!el) return;
+  if ('value' in el) el.value = v ?? ''; else el.textContent = v ?? '';
+  if (source) FIELD_SOURCES[id] = source;
+  refreshStatusFor(id);
+}
+
+// --- 4) Update a single row
+function refreshStatusFor(id){
+  const conf = STATUS_MAP[id];
+  if (!conf) return;
+
+  // value cell
+  const vEl = document.querySelector(conf.valueSel);
+  if (vEl){
+    const raw = getVal(id);
+    vEl.textContent = raw === '' ? '—' : raw;
+  }
+
+  // source cell
+  const sEl = document.querySelector(conf.sourceSel);
+  if (sEl){
+    const src = FIELD_SOURCES[id] || (getVal(id)==='' ? '' : 'Manual');
+    sEl.textContent = src || '—';
+  }
+}
+
+// --- 5) Update all rows (call on load)
+function refreshStatusAll(){
+  Object.keys(STATUS_MAP).forEach(refreshStatusFor);
+}
+
+// --- 6) Mark manual edits automatically
+function wireManualTracking(){
+  Object.keys(STATUS_MAP).forEach(id=>{
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      FIELD_SOURCES[id] = 'Manual';
+      refreshStatusFor(id);
+    });
+  });
+}
+
+// --- 7) Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  wireManualTracking();
+  refreshStatusAll();
+});
+
+// --- 8) After any fetch/populate, call these:
+window.finalizeStatusAfterFetch = function(){
+  refreshStatusAll();
+};
+</script>
+
 </body>
 </html>
