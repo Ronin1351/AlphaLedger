@@ -1,13 +1,13 @@
 export default async function handler(req, res) {
   const { cik, tag } = req.query;
-  if (!/^\d{10}$/.test(String(cik || '')) || !tag) {
-    res.status(400).json({ error: 'bad query' }); return;
-  }
-  const url = `https://data.sec.gov/api/xbrl/companyconcept/${cik}/us-gaap/${encodeURIComponent(tag)}.json`;
+  const padded = String(cik || '').replace(/\D/g, '').padStart(10, '0');
+  if (!/^\d{10}$/.test(padded) || !tag) return res.status(400).json({ error: 'bad query' });
+
+  const url = `https://data.sec.gov/api/xbrl/companyconcept/CIK${padded}/us-gaap/${encodeURIComponent(tag)}.json`;
   try {
     const r = await fetch(url, {
       headers: {
-        'User-Agent': 'UnifiedStockEvaluator/1.0 (you@example.com)',
+        'User-Agent': 'Alpha-Ledger/1.0 (you@example.com)',
         'Accept': 'application/json'
       }
     });
