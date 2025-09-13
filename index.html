@@ -1573,7 +1573,7 @@ window.finalizeStatusAfterFetch = function(){
 <script>
 document.addEventListener('DOMContentLoaded', function(){
   function safe(fn){ try{ fn&&fn(); }catch(e){} }
-  const fireAll = () => { safe(window.computeSnapshot); safe(window.computeVerdict); };
+  const fireAll = () => { safe(window.computeFScore); safe(window.computeSnapshot); safe(window.computeVerdict); };
 
   // Hook compute button
   var btn = document.getElementById('btnCompute');
