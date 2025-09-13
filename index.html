@@ -943,10 +943,9 @@ const roic = (Number.isFinite(invested) && Math.abs(invested) > 1e-9)
   }
 }function computeVerdict(){
   try{
-    // ensure global state object exists
     const V = (window.V = window.V || {});
 
-    // Read DOM
+    // Read current panel values
     const scoreText = (document.getElementById('totalScore')?.textContent||'').split('/')[0].trim();
     const spreadTxt = (document.getElementById('spread')?.textContent||'').replace('%','').trim();
     const roicTxt   = (document.getElementById('roicOut')?.textContent||'').replace('%','').trim();
@@ -960,51 +959,52 @@ const roic = (Number.isFinite(invested) && Math.abs(invested) > 1e-9)
     const gParsed = parseFloat(cgTxt);
     const wParsed = parseFloat(waccTxt);
 
-    // Compute spread if not present
+    // Compute spread if missing or stale
     let spreadVal = Number.isFinite(sParsed) ? sParsed : null;
-    if (spreadVal==null && Number.isFinite(rParsed) && Number.isFinite(wParsed)){
+    if ((spreadVal==null || isNaN(spreadVal)) && Number.isFinite(rParsed) && Number.isFinite(wParsed)){
       spreadVal = rParsed - wParsed;
       const spreadEl = document.getElementById('spread');
       if (spreadEl) spreadEl.textContent = spreadVal.toFixed(2) + '%';
     }
 
-    // Derive growth class if blank but we have a number
-    let growthClass = gClassTxt && gClassTxt !== '—' ? gClassTxt : null;
+    // Determine growth class if blank
+    let growthClass = (gClassTxt && gClassTxt !== '—') ? gClassTxt : null;
     if (!growthClass && Number.isFinite(gParsed)){
-      growthClass = (gParsed >= 30) ? 'High' : (gParsed >= 25 ? 'Moderate' : 'Low');
+      growthClass = (gParsed < 25) ? 'Poor'
+                   : (gParsed < 30) ? 'Below average'
+                   : (gParsed < 50) ? 'Acceptable'
+                   : (gParsed < 80) ? 'Strong'
+                   : (gParsed <=120) ? 'Excellent'
+                   : 'Outlier';
       const gEl = document.getElementById('growthClass');
       if (gEl) gEl.textContent = growthClass;
     }
 
-    // Stash into V for consistency
     V.fscore = Number.isFinite(fParsed) ? fParsed : null;
-    V.roic = Number.isFinite(rParsed) ? rParsed : null;
+    V.roic   = Number.isFinite(rParsed) ? rParsed : null;
     V.spread = Number.isFinite(spreadVal) ? spreadVal : null;
-    V.growthPct = Number.isFinite(gParsed) ? gParsed : null;
-    V.growthClass = growthClass || gClassTxt || '—';
+    V.growthPct  = Number.isFinite(gParsed) ? gParsed : null;
+    V.growthClass= growthClass || '—';
 
-    // Output fields in Composite Verdict panel
+    // Verdict panel fields
+    const vLabel = document.getElementById('verdictLabel');
+    const vBadge = document.getElementById('verdictBadge');
+    const vEmoji = document.getElementById('verdictEmoji');
+    const vReason= document.getElementById('verdictReason');
     const vFs = document.getElementById('vFscore');
     const vSp = document.getElementById('vSpread');
     const vGc = document.getElementById('vGrowthClass');
     const vGn = document.getElementById('vGrowthNum');
-
     if (vFs) vFs.textContent = (V.fscore!=null) ? (V.fscore + ' / 9') : '—';
     if (vSp) vSp.textContent = (V.spread!=null) ? (V.spread.toFixed(2) + '%') : '—';
     if (vGc) vGc.textContent = V.growthClass || '—';
     if (vGn) vGn.textContent = (V.growthPct!=null) ? (V.growthPct.toFixed(2) + '%') : '—';
 
-    // Elements for verdict
-    const vLabel = document.getElementById('verdictLabel');
-    const vBadge = document.getElementById('verdictBadge');
-    const vEmoji = document.getElementById('verdictEmoji');
-    const vReason= document.getElementById('verdictReason');
-
-    // Require F-Score and Spread. Growth optional.
+    // If we lack core inputs, set to Hold to avoid "Avoid" wording
     if (V.fscore==null || V.spread==null){
-      if (vLabel) vLabel.textContent = 'Needs inputs';
-      if (vEmoji) vEmoji.textContent = '—';
-      if (vBadge) vBadge.className = 'kpi na';
+      if (vLabel) vLabel.textContent = 'Hold';
+      if (vEmoji) vEmoji.textContent = '◔';
+      if (vBadge) vBadge.className = 'kpi';
       if (vReason){
         const miss = [
           V.fscore==null ? 'F-Score' : null,
@@ -1015,46 +1015,52 @@ const roic = (Number.isFinite(invested) && Math.abs(invested) > 1e-9)
       return;
     }
 
-    // Buckets
-    const fBucket = (V.fscore >= 7) ? 'strong' : (V.fscore >= 4 ? 'avg' : 'weak');
-    // Align to chip: > +0.5 positive, < -0.5 negative, else flat
-    const sBucket = (V.spread > 0.5) ? 'positive' : (V.spread < -0.5 ? 'negative' : 'flat');
-    const gBucket = (V.growthPct==null) ? 'unknown' : (V.growthPct >= 30) ? 'ok' : (V.growthPct >= 25) ? 'borderline' : 'weak';
+    // Normalize inputs into a composite
+    const fScoreNorm = Math.max(0, Math.min(1, (V.fscore ?? 0) / 9));
+    const spreadScore =
+      (V.spread <= -5) ? 0 :
+      (V.spread <  -.5)? 0.15 :
+      (V.spread <= .5)? 0.35 :
+      (V.spread <= 5) ? 0.60 :
+      (V.spread <=15) ? 0.80 : 1.00;
 
-    // Verdict rules
-    let verdict = 'Neutral / Needs work';
-    let emoji   = '•';
-    let badge   = 'kpi na';
+    const growthScore =
+      (V.growthPct==null) ? 0.5 :
+      (V.growthPct < 25) ? 0.00 :
+      (V.growthPct < 30) ? 0.35 :
+      (V.growthPct < 50) ? 0.55 :
+      (V.growthPct < 80) ? 0.75 :
+      (V.growthPct <=120)? 0.90 : 1.00;
 
-    if (fBucket==='strong' && sBucket==='positive' && (gBucket==='ok' || gBucket==='borderline' || gBucket==='unknown')){
-      verdict = 'Strong Candidate';
-      emoji   = '✓';
-      badge   = 'kpi good';
-    } else if ((fBucket==='strong' || fBucket==='avg') && sBucket!=='negative' && gBucket!=='weak'){
-      verdict = 'Watch / Conditional Buy';
-      emoji   = '◔';
-      badge   = 'kpi';
-    } else if (fBucket==='weak' || sBucket==='negative'){
-      verdict = 'Avoid for now';
-      emoji   = '×';
-      badge   = 'kpi bad';
-    }
+    const composite = 0.45*spreadScore + 0.35*fScoreNorm + 0.20*growthScore;
 
-    // Reasons
-    const reasons = [];
-    reasons.push(`F-Score ${V.fscore}/9 (${fBucket})`);
-    reasons.push(`Spread ${V.spread.toFixed(2)}% (${sBucket})`);
-    if (V.growthPct!=null){
-      reasons.push(`Growth ${V.growthPct.toFixed(2)}% (${gBucket}; ${V.growthClass})`);
-    }else{
-      reasons.push(`Growth — (${gBucket})`);
-    }
+    // Map to 5 fixed labels only
+    let verdict = 'Hold';
+    let badge   = 'kpi';
+    if (composite >= 0.80){ verdict = 'Strong Buy'; badge = 'kpi good'; }
+    else if (composite >= 0.65){ verdict = 'Buy'; badge = 'kpi good'; }
+    else if (composite >= 0.45){ verdict = 'Hold'; badge = 'kpi'; }
+    else if (composite >= 0.30){ verdict = 'Sell'; badge = 'kpi bad'; }
+    else { verdict = 'Strong Sell'; badge = 'kpi bad'; }
 
     if (vLabel) vLabel.textContent = verdict;
-    if (vEmoji) vEmoji.textContent = emoji;
-    if (vBadge) vBadge.className   = badge;
+    if (vBadge) vBadge.className = badge;
+    if (vEmoji) vEmoji.textContent = verdict in {'Strong Buy':1,'Buy':1} ? '✓' : (verdict in {'Hold':1} ? '◔' : '×');
+
+    // Reason line
+    const reasons = [];
+    reasons.push(`F-Score ${V.fscore}/9`);
+    reasons.push(`Spread ${V.spread.toFixed(2)}%`);
+    reasons.push(`Growth ${V.growthPct!=null ? V.growthPct.toFixed(2)+'%' : '—'}`);
+    reasons.push(`Composite ${(composite*100).toFixed(0)}/100`);
     if (vReason) vReason.textContent = reasons.join(' • ');
-  }catch(e){ /* no-op */ }
+  }catch(e){
+    // fail safe
+    const vLabel = document.getElementById('verdictLabel');
+    const vBadge = document.getElementById('verdictBadge');
+    if (vLabel) vLabel.textContent = 'Hold';
+    if (vBadge) vBadge.className = 'kpi';
+  }
 }
 
   // Patch compute functions to also compute verdict
