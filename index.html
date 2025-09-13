@@ -1333,7 +1333,7 @@ function set(id, v){ const el = document.getElementById(id); if (el) el.value = 
   return null;
 }
 
-  function setVal(id, v){ const el=byId(id); if(el) el.value = v ?? ''; }
+  function setVal(id, v){ const el = byId(id); if(el) el.value = v ?? ''; try{ if (typeof computeSnapshot==='function') computeSnapshot(); if (typeof computeVerdict==='function') computeVerdict(); }catch(e){} }
   function writePair(label, meta, ids){
     if (!meta || !meta.pair){ DBG.field(label, 'missing'); return; }
     const [aId,bId]=ids; const [a,b]=meta.pair; setVal(aId,a); setVal(bId,b);
@@ -1564,6 +1564,31 @@ document.addEventListener('DOMContentLoaded', () => {
 window.finalizeStatusAfterFetch = function(){
   refreshStatusAll();
 };
+</script>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  function safe(fn){ try{ fn&&fn(); }catch(e){} }
+  const fireAll = () => { safe(window.computeSnapshot); safe(window.computeVerdict); };
+
+  // Hook compute button
+  var btn = document.getElementById('btnCompute');
+  if (btn) btn.addEventListener('click', function(){ 
+    safe(window.computeAll); 
+    fireAll();
+  });
+
+  // Live updates for snapshot inputs
+  ['ebit','rev0','std','ltd0','cpltd','termdebt','cash','ebitda','tax','cs','cap','re','ca0','cl0','assets0','r1','r2','r3','r4','wacc']
+    .forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('input', fireAll);
+    });
+
+  // First render
+  fireAll();
+});
 </script>
 
 </body>
