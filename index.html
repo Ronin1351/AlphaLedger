@@ -883,23 +883,19 @@
   }
   const NOPAT = (EBIT || 0) * (1 - taxRate);
 
-  // Greenblatt-style invested capital proxy
+  
+  // Operating Invested Capital (software/asset-light friendly)
+  // Use: Invested = Total Assets − Cash − Non‑interest‑bearing Current Liabilities
+  // where NIBCL = Current Liabilities − Short‑term Debt − CPLTD.
   const ca = parseNum(g('ca0').value);
   const cl = parseNum(g('cl0').value);
   const assets = parseNum(g('assets0').value);
 
-  // Net working capital excluding cash; add back interest-bearing CL
-  const nwc = Math.max(
-    0,
-    ((ca||0) - (cash||0)) - ((cl||0) - (std||0) - (cpltd||0))
-  );
-  // Net fixed assets ≈ total assets − current assets
-  const netFixed = Math.max(0, (assets||0) - (ca||0));
+  const operCL = Math.max(0, (cl||0) - (std||0) - (cpltd||0));
+  let invested = Math.max(0, (assets||0) - (cash||0) - operCL);
 
-  let invested = nwc + netFixed;
-
-  // Fallback: equity+debt−cash if proxy invalid
-  if (!Number.isFinite(invested) || invested <= 0) {
+  // Fallback if inputs are incomplete: equity + interest‑bearing debt − cash
+  if (!Number.isFinite(invested) || invested <= 0){
     const cs = parseNum(g('cs').value);
     const cap = parseNum(g('cap').value);
     const re  = parseNum(g('re').value);
@@ -907,8 +903,7 @@
              + ((cs||0) + (cap||0) + (re||0))
              - (cash||0);
   }
-
-  const roic = (Number.isFinite(invested) && Math.abs(invested) > 1e-9)
+const roic = (Number.isFinite(invested) && Math.abs(invested) > 1e-9)
     ? (NOPAT / invested) * 100
     : 0;
   g('roicOut').textContent = pct(roic);
