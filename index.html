@@ -854,10 +854,8 @@
     if (p >= 80 && p <= 120) return 'Excellent';
     return (p > 120) ? 'Outlier' : '—';
   }
- <script>
-// ROIC / Debt / Margins / Growth compute  — PATCHED
-function computeSnapshot(){
-  // EBIT margin
+  function computeSnapshot(){
+  // EBIT Margin
   const EBIT  = parseNum(g('ebit').value);
   const Sales = parseNum(g('rev0').value);
   const ebitMargin = Sales !== 0 ? (EBIT / Sales) * 100 : 0;
@@ -874,9 +872,9 @@ function computeSnapshot(){
   const ndRatio = ebitda !== 0 ? netDebt / ebitda : 0;
   g('ndebtOut').textContent = fix(ndRatio, 2);
 
-  // ROIC — use operating invested capital + proper NOPAT
+  // ROIC — NOPAT with tax rate; operating invested capital
   const taxExp = parseNum(g('tax').value);
-  // derive a tax rate when possible; clamp to 0–45%
+  // infer tax rate; clamp 0–45%
   let taxRate = 0.21;
   if (Number.isFinite(taxExp) && Number.isFinite(EBIT) && EBIT > 0 && taxExp >= 0) {
     taxRate = Math.max(0, Math.min(0.45, taxExp / EBIT));
@@ -890,18 +888,17 @@ function computeSnapshot(){
   const cl = parseNum(g('cl0').value);
   const assets = parseNum(g('assets0').value);
 
-  // Net working capital excluding cash; add back interest-bearing current liabilities
+  // Net working capital excluding cash; add back interest-bearing CL
   const nwc = Math.max(
     0,
     ((ca||0) - (cash||0)) - ((cl||0) - (std||0) - (cpltd||0))
   );
-
-  // Net fixed assets (approx): total assets minus current assets
+  // Net fixed assets ≈ total assets − current assets
   const netFixed = Math.max(0, (assets||0) - (ca||0));
 
   let invested = nwc + netFixed;
 
-  // Fallback: if proxy can’t be formed, use prior method incl. short-term debt
+  // Fallback: equity+debt−cash if proxy invalid
   if (!Number.isFinite(invested) || invested <= 0) {
     const cs = parseNum(g('cs').value);
     const cap = parseNum(g('cap').value);
@@ -914,7 +911,6 @@ function computeSnapshot(){
   const roic = (Number.isFinite(invested) && Math.abs(invested) > 1e-9)
     ? (NOPAT / invested) * 100
     : 0;
-
   g('roicOut').textContent = pct(roic);
 
   // Growth (unchanged)
@@ -926,7 +922,7 @@ function computeSnapshot(){
   g('cumOut').textContent = pct(cg);
   g('growthClass').textContent = classifyGrowth(cg);
 
-  // WACC comparison (unchanged except using new roic)
+  // WACC comparison
   const wacc = parseNum(g('wacc').value);
   if ((g('wacc').value||'').trim().length){
     const spread = roic - (wacc||0);
@@ -950,382 +946,7 @@ function computeSnapshot(){
     g('valueFlag').className = 'chip';
     g('notes').textContent = 'Enter a WACC to see value creation or destruction.';
   }
-}
-</script>
-
-  // Compute ALL + highlight missing
-  function computeAll(){
-    computeFScore();
-    computeSnapshot();
-    highlightMissing();
-    renderStatus();
-  }
-  function highlightMissing(){
-    document.querySelectorAll('.input').forEach(el => {
-      const v = (el.value||'').trim();
-      if (!v) el.classList.add('missing'); else el.classList.remove('missing');
-    });
-  }
-  document.getElementById('btnCompute').addEventListener('click', computeAll);
-  // Live updates for snapshot metrics
-  ['ebit','rev0','std','ltd0','cpltd','termdebt','cash','ebitda','tax','cs','cap','re','r1','r2','r3','r4','wacc'].forEach(id=>{
-    g(id).addEventListener('input', computeSnapshot);
-  });
-
-  // Safe fetch (quiet)
-  async function safeFetch(url) {
-    try { const r = await fetch(url); if (!r.ok) return { ok:false, res:r }; return { ok:true, res:r, json: await r.json() }; }
-    catch { return { ok:false, res:null }; }
-  }
-  function resetStatus() { for (const [id] of FIELDS) status[id] = {source:'', value: NaN}; renderStatus(); }
-
-  // FMP disabled handler replaced by debug-enabled handler
-// Finnhub fetch (financials-reported + shares metric)
-  document.getElementById('btnFinnhub').addEventListener('click', async () => {
-    const key = g('finnhubKey').value.trim();
-    let t = g('ticker').value.trim().toUpperCase();
-    g('ticker').value = t;
-    lastAttempt = 'Finnhub';
-    if (!/^[A-Z]{1,5}$/.test(t)) { showAlert('Ticker must be 1–5 uppercase letters.'); return; }
-    if (!key) { showAlert('Enter your Finnhub API key.'); return; }
-
-    resetStatus();
-    AUX.cor0 = AUX.cor1 = AUX.tdebt0 = AUX.tdebt1 = NaN;
-
-    const repQ = await safeFetch(`https://finnhub.io/api/v1/stock/financials-reported?symbol=${encodeURIComponent(t)}&freq=annual&token=${encodeURIComponent(key)}`);
-    function parseReported(rep) {
-      const ic = rep?.report?.ic || [];
-      const bs = rep?.report?.bs || [];
-      const cf = rep?.report?.cf || [];
-      const val = (arr, keys) => {
-        const lower = keys.map(k=>k.toLowerCase());
-        for (const x of arr) {
-          const c = (x.concept||'').toLowerCase(); const l = (x.label||'').toLowerCase();
-          if (lower.includes(c) || lower.some(k => l.includes(k))) {
-            if (typeof x.value === 'number') return x.value;
-          }
-        }
-        return undefined;
-      };
-      const revenue = val(ic, ['Revenues','RevenueFromContractWithCustomerExcludingAssessedTax','SalesRevenueNet','Revenue']);
-      const costOfRevenue = val(ic, ['CostOfRevenue','CostOfGoodsAndServicesSold']);
-      const grossProfit = val(ic, ['GrossProfit','GrossProfitLoss']);
-      const netIncome = val(ic, ['NetIncomeLoss','ProfitLoss']);
-      const totalAssets = val(bs, ['Assets','AssetsCurrentAndNoncurrent']);
-      const currentAssets = val(bs, ['AssetsCurrent']);
-      const currentLiabilities = val(bs, ['LiabilitiesCurrent']);
-      const longTermDebt = val(bs, ['LongTermDebtNoncurrent','LongTermDebtAndCapitalLeaseObligations','LongTermDebt']);
-      const totalDebt = val(bs, ['DebtSecurities','Debt','LongTermDebtAndCapitalLeaseObligations','LongTermDebt']);
-      const cfo = val(cf, ['NetCashProvidedByUsedInOperatingActivities','NetCashProvidedByUsedInOperatingActivitiesContinuingOperations']);
-      const shares = val(ic, ['WeightedAverageNumberOfDilutedSharesOutstanding','WeightedAverageNumberOfSharesOutstandingBasic','WeightedAverageNumberOfSharesOutstanding']);
-      return { revenue, costOfRevenue, grossProfit, netIncome, totalAssets, currentAssets, currentLiabilities, longTermDebt, totalDebt, cfo, shares };
-    }
-    if (repQ.ok) {
-      const reps = (repQ.json?.data || []).slice().sort((a,b)=> (b.fiscalYear||0) - (a.fiscalYear||0));
-      if (reps.length >= 1) {
-        const cur = parseReported(reps[0]);
-        mark('rev0','Finnhub',cur.revenue);
-        mark('gp0','Finnhub',cur.grossProfit);
-        mark('assets0','Finnhub',cur.totalAssets);
-        mark('ni0','Finnhub',cur.netIncome);
-        mark('cfo0','Finnhub',cur.cfo);
-        mark('ltd0','Finnhub',cur.longTermDebt);
-        mark('ca0','Finnhub',cur.currentAssets);
-        mark('cl0','Finnhub',cur.currentLiabilities);
-        mark('sh0','Finnhub',cur.shares);
-        AUX.cor0 = parseNum(cur.costOfRevenue);
-        AUX.tdebt0 = parseNum(cur.totalDebt);
-      }
-      if (reps.length >= 2) {
-        const prev = parseReported(reps[1]);
-        mark('rev1','Finnhub',prev.revenue);
-        mark('gp1','Finnhub',prev.grossProfit);
-        mark('assets1','Finnhub',prev.totalAssets);
-        mark('ni1','Finnhub',prev.netIncome);
-        mark('cfo1','Finnhub',prev.cfo);
-        mark('ltd1','Finnhub',prev.longTermDebt);
-        mark('ca1','Finnhub',prev.currentAssets);
-        mark('cl1','Finnhub',prev.currentLiabilities);
-        mark('sh1','Finnhub',prev.shares);
-        AUX.cor1 = parseNum(prev.costOfRevenue);
-        AUX.tdebt1 = parseNum(prev.totalDebt);
-      }
-    }
-    if (isEmpty('sh0')) {
-      const m = await safeFetch(`https://finnhub.io/api/v1/stock/metric?symbol=${encodeURIComponent(t)}&metric=all&token=${encodeURIComponent(key)}`);
-      if (m.ok) {
-        const so = m.json?.metric?.shareOutstanding;
-        if (Number.isFinite(parseNum(so))) mark('sh0','Finnhub (metric: point-in-time)',so);
-      }
-    }
-    ensureComputedFallbacks();
-    finalizeStatusAfterFetch();
-    computeAll();
-  });
-
-// ===== FMP DEBUG/Fetcher (auto-injected) =====
-const FMP_BASE = 'https://financialmodelingprep.com/stable';
-
-function addRow(tbody, cellsHtml){
-  const tr = document.createElement('tr'); tr.innerHTML = cellsHtml; tbody.appendChild(tr);
-}
-function fmtNum(n){
-  const v = parseNum(n); return Number.isFinite(v) ? new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(v) : '—';
-}
-async function fmpFetch(url){
-  try{
-    const res = await fetch(url);
-    const text = await res.text();
-    let json = null; try { json = JSON.parse(text); } catch {}
-    return { ok: res.ok, status: res.status, url, headers: Object.fromEntries(res.headers.entries()), json, text };
-  }catch(e){ return { ok:false, status:0, url, headers:{}, json:null, text:String(e||'fetch error') }; }
-}
-function fmpBuildUrls(t, key){
-  const qs = `symbol=${encodeURIComponent(t)}&period=annual&limit=6&apikey=${encodeURIComponent(key)}`;
-  return {
-    income: `${FMP_BASE}/income-statement?${qs}`,
-    balance: `${FMP_BASE}/balance-sheet-statement?${qs}`,
-    cashflow: `${FMP_BASE}/cash-flow-statement?${qs}`
-  };
-}
-function fmpExtract(income, balance, cashflow){
-  const curI = Array.isArray(income)&&income[0]||{}; const prevI = Array.isArray(income)&&income[1]||{};
-  const curB = Array.isArray(balance)&&balance[0]||{}; const prevB = Array.isArray(balance)&&balance[1]||{};
-  const curC = Array.isArray(cashflow)&&cashflow[0]||{}; const prevC = Array.isArray(cashflow)&&cashflow[1]||{};
-  const val = (obj, keys)=> { for(const k of keys){ if (typeof obj[k] === 'number') return obj[k]; } };
-  const cur = {
-    rev: val(curI, ['revenue','revenues']),
-    gp:  val(curI, ['grossProfit']),
-    ni:  val(curI, ['netIncome']),
-    sh:  val(curI, ['weightedAverageShsOutDil','weightedAverageShsOut']),
-    assets: val(curB, ['totalAssets']),
-    ca:  val(curB, ['totalCurrentAssets']),
-    cl:  val(curB, ['totalCurrentLiabilities']),
-    ltd: val(curB, ['longTermDebt']),
-    std: val(curB, ['shortTermDebt']),
-    cfo: val(curC, ['netCashProvidedByOperatingActivities'])
-  };
-  const prev = {
-    rev: val(prevI, ['revenue','revenues']),
-    gp:  val(prevI, ['grossProfit']),
-    ni:  val(prevI, ['netIncome']),
-    sh:  val(prevI, ['weightedAverageShsOutDil','weightedAverageShsOut']),
-    assets: val(prevB, ['totalAssets']),
-    ca:  val(prevB, ['totalCurrentAssets']),
-    cl:  val(prevB, ['totalCurrentLiabilities']),
-    ltd: val(prevB, ['longTermDebt']),
-    std: val(prevB, ['shortTermDebt']),
-    cfo: val(prevC, ['netCashProvidedByOperatingActivities'])
-  };
-  cur.totalDebt = Number.isFinite(parseNum(cur.ltd)) || Number.isFinite(parseNum(cur.std)) ? (parseNum(cur.ltd)||0)+(parseNum(cur.std)||0) : undefined;
-  prev.totalDebt = Number.isFinite(parseNum(prev.ltd)) || Number.isFinite(parseNum(prev.std)) ? (parseNum(prev.ltd)||0)+(parseNum(prev.std)||0) : undefined;
-  return {cur, prev};
-}
-function renderFmpTables(reqs, map){
-  const reqT = document.querySelector('#fmpReqTable tbody'); if (reqT) { reqT.innerHTML = ''; for(const r of reqs){
-    addRow(reqT, `<td class="mono">${r.name}</td><td><span class="pill ${r.ok?'ok':'bad'}">${r.status}</span></td><td>${Array.isArray(r.json)?r.json.length:'—'}</td><td class="mono">${r.url}</td>`);
-  }}
-  const headersPre = document.getElementById('fmpHeaders'); if (headersPre) headersPre.textContent = JSON.stringify(reqs.reduce((a,r)=>{a[r.name]=r.headers||{};return a;},{}), null, 2);
-  const jsonPre = document.getElementById('fmpJson'); const cut=(s)=> (s||'').slice(0,4000);
-  if (jsonPre) jsonPre.textContent = reqs.map(r=>`// ${r.name}\n${cut(r.text)}`).join('\n\n');
-  const rows = [
-    ['Revenue', map.cur.rev, map.prev.rev, 'income-statement'],
-    ['Gross Profit', map.cur.gp, map.prev.gp, 'income-statement'],
-    ['Total Assets', map.cur.assets, map.prev.assets, 'balance-sheet'],
-    ['Net Income', map.cur.ni, map.prev.ni, 'income-statement'],
-    ['CFO', map.cur.cfo, map.prev.cfo, 'cash-flow'],
-    ['LT Debt', map.cur.ltd, map.prev.ltd, 'balance-sheet'],
-    ['Current Assets', map.cur.ca, map.prev.ca, 'balance-sheet'],
-    ['Current Liabilities', map.cur.cl, map.prev.cl, 'balance-sheet'],
-    ['Shares (WA Dil/Basic)', map.cur.sh, map.prev.sh, 'income-statement'],
-    ['Total Debt (Computed)', map.cur.totalDebt, map.prev.totalDebt, 'computed']
-  ];
-  const parseT = document.querySelector('#fmpParseTable tbody'); if (parseT) { parseT.innerHTML=''; for(const [label,c,p,src] of rows){
-    const okc = Number.isFinite(parseNum(c)); const okp = Number.isFinite(parseNum(p));
-    addRow(parseT, `<td>${label}</td><td class="mono">${fmtNum(c)}</td><td class="mono">${fmtNum(p)}</td><td><span class="pill ${(okc||okp)?'ok':'bad'}">${(okc||okp)?src:'missing'}</span></td>`);
-  }}
-}
-function writeParsedToInputs(map){
-  const wr = (id, v)=> { if (Number.isFinite(parseNum(v))) mark(id, 'FMP', v, {force:true}); };
-  wr('rev0', map.cur.rev); wr('gp0', map.cur.gp); wr('assets0', map.cur.assets); wr('ni0', map.cur.ni);
-  wr('cfo0', map.cur.cfo); wr('ltd0', map.cur.ltd); wr('ca0', map.cur.ca); wr('cl0', map.cur.cl); wr('sh0', map.cur.sh);
-  wr('rev1', map.prev.rev); wr('gp1', map.prev.gp); wr('assets1', map.prev.assets); wr('ni1', map.prev.ni);
-  wr('cfo1', map.prev.cfo); wr('ltd1', map.prev.ltd); wr('ca1', map.prev.ca); wr('cl1', map.prev.cl); wr('sh1', map.prev.sh);
-  if (!Number.isFinite(num('ltd0')) && Number.isFinite(parseNum(map.cur.totalDebt))) window.AUX = Object.assign(window.AUX||{}, { tdebt0: parseNum(map.cur.totalDebt) });
-  if (!Number.isFinite(num('ltd1')) && Number.isFinite(parseNum(map.prev.totalDebt))) window.AUX = Object.assign(window.AUX||{}, { tdebt1: parseNum(map.prev.totalDebt) });
-  ensureComputedFallbacks(); finalizeStatusAfterFetch(); renderStatus();
-}
-async function runFmpFetchViaDebug(){
-  const key = (document.getElementById('fmpKey')||{value:''}).value.trim();
-  const t = (document.getElementById('ticker')||{value:''}).value.trim().toUpperCase();
-  if (!/^[A-Z]{1,5}$/.test(t)) { showAlert('Ticker must be 1–5 uppercase letters.'); return; }
-  if (!key) { showAlert('Enter your FMP API key.'); return; }
-  const urls = fmpBuildUrls(t, key);
-  const [rI, rB, rC] = await Promise.all([
-    fmpFetch(urls.income).then(x=>({...x,name:'income-statement'})),
-    fmpFetch(urls.balance).then(x=>({...x,name:'balance-sheet'})),
-    fmpFetch(urls.cashflow).then(x=>({...x,name:'cash-flow'})),
-  ]);
-  const map = fmpExtract(rI.json, rB.json, rC.json);
-  renderFmpTables([rI,rB,rC], map);
-  lastAttempt = 'FMP'; resetStatus(); writeParsedToInputs(map); computeAll(); renderStatus();
-}
-// Hook the existing UI buttons
-(function wireFmpButtons(){
-  const btnMain = document.getElementById('btnFmp');
-  if (btnMain) { btnMain.disabled = false; btnMain.onclick = runFmpFetchViaDebug; }
-  const btnDbg = document.getElementById('btnFmpDebug');
-  if (btnDbg) btnDbg.addEventListener('click', runFmpFetchViaDebug);
-  const btnClr = document.getElementById('btnFmpClear');
-  if (btnClr) btnClr.addEventListener('click', ()=>{
-    const $ = (s)=>document.querySelector(s);
-    if ($('#fmpReqTable tbody')) $('#fmpReqTable tbody').innerHTML='';
-    if ($('#fmpParseTable tbody')) $('#fmpParseTable tbody').innerHTML='';
-    if ($('#fmpHeaders')) $('#fmpHeaders').textContent='';
-    if ($('#fmpJson')) $('#fmpJson').textContent='';
-  });
-})();
-// ===== /FMP DEBUG/Fetcher =====
-
-
-// ===== FMP ENHANCEMENTS: derive EBIT/EBITDA/Tax/Cash/Equity/Growth =====
-function fmpExtractEnhanced(incomeArr, balanceArr, cashArr){
-  const safeArr = (a)=> Array.isArray(a) ? a : [];
-  const I = safeArr(incomeArr);
-  const B = safeArr(balanceArr);
-  const C = safeArr(cashArr);
-  // Use first as current, second as prior
-  const curI = I[0]||{}, prevI = I[1]||{};
-  const curB = B[0]||{}, prevB = B[1]||{};
-  const curC = C[0]||{}, prevC = C[1]||{};
-
-  // Helper to pick first numeric
-  const get = (o, list)=> { for(const k of list){ if (typeof o[k] === 'number') return o[k]; } };
-  // Revenue history for growth (up to 5 points)
-  const revHist = I.slice(0,5).map(row=> get(row, ['revenue','revenues']) ).filter(v=> Number.isFinite(v));
-
-  const derived = {
-    // EBIT: prefer operatingIncome
-    ebit: get(curI, ['operatingIncome','ebit','ebitda']) ?? undefined,
-    // EBITDA: prefer ebitda; else EBIT + D&A from either income or cashflow
-    ebitda: undefined,
-    // Income Tax
-    tax: get(curI, ['incomeTaxExpense','incomeTaxProvision']),
-    // Cash & equivalents
-    cash: get(curB, ['cashAndCashEquivalents','cashAndCashEquivalentsShortTermInvestments','cashAndShortTermInvestments']),
-    // Debt splits
-    std: get(curB, ['shortTermDebt','shortLongTermDebtTotal','currentDebt']),
-    cpltd: get(curB, ['shortLongTermDebtTotal','currentPortionOfLongTermDebt']),
-    termdebt: undefined,
-    // Equity accounts
-    cs: get(curB, ['commonStock']),
-    cap: get(curB, ['additionalPaidInCapital','capitalSurplus']),
-    re: get(curB, ['retainedEarnings']),
-    // Growth %
-    r1: undefined, r2: undefined, r3: undefined, r4: undefined,
-    // D&A to help EBITDA
-    da: get(curI, ['depreciationAndAmortization']) ?? get(curC, ['depreciationAndAmortization'])
-  };
-
-  // Backfill EBIT if we only have NI + taxes + interest (not available here), so keep as is.
-  // EBITDA
-  if (Number.isFinite(parseNum(get(curI, ['ebitda'])))) {
-    derived.ebitda = get(curI, ['ebitda']);
-  } else if (Number.isFinite(parseNum(derived.ebit)) && Number.isFinite(parseNum(derived.da))) {
-    derived.ebitda = parseNum(derived.ebit) + parseNum(derived.da);
-  }
-
-  // Term debt = LTD + STD if both present
-  const ltd = get(curB, ['longTermDebt']);
-  if (Number.isFinite(parseNum(ltd)) || Number.isFinite(parseNum(derived.std))) {
-    derived.termdebt = (parseNum(ltd)||0) + (parseNum(derived.std)||0);
-  }
-
-  // Revenue growth calculations (YoY %)
-  // r1: (rev0 - rev1)/rev1, r2: (rev1 - rev2)/rev2, etc.
-  function grow(a,b){ return (Number.isFinite(parseNum(a)) && Number.isFinite(parseNum(b)) && b!=0) ? (parseNum(a)-parseNum(b))/parseNum(b)*100 : undefined; }
-  if (revHist.length >= 2) derived.r1 = grow(revHist[0], revHist[1]);
-  if (revHist.length >= 3) derived.r2 = grow(revHist[1], revHist[2]);
-  if (revHist.length >= 4) derived.r3 = grow(revHist[2], revHist[3]);
-  if (revHist.length >= 5) derived.r4 = grow(revHist[3], revHist[4]);
-
-  return derived;
-}
-
-function writeDerivedToInputs(derived){
-  const wr = (id, v)=> { if (Number.isFinite(parseNum(v))) mark(id, 'FMP*', v, {force:true}); };
-
-  wr('ebit', derived.ebit);
-  wr('ebitda', derived.ebitda);
-  wr('tax', derived.tax);
-  wr('cash', derived.cash);
-  wr('std', derived.std);
-  wr('cpltd', derived.cpltd);
-  wr('termdebt', derived.termdebt);
-  wr('cs', derived.cs);
-  wr('cap', derived.cap);
-  wr('re', derived.re);
-  wr('r1', derived.r1);
-  wr('r2', derived.r2);
-  wr('r3', derived.r3);
-  wr('r4', derived.r4);
-}
-
-// Hook into the existing FMP flow: after we parse map, compute derived and write
-const __old_runFmpFetchViaDebug = runFmpFetchViaDebug;
-runFmpFetchViaDebug = async function(){
-  const key = (document.getElementById('fmpKey')||{value:''}).value.trim();
-  const t = (document.getElementById('ticker')||{value:''}).value.trim().toUpperCase();
-  if (!/^[A-Z]{1,5}$/.test(t)) { showAlert('Ticker must be 1–5 uppercase letters.'); return; }
-  if (!key) { showAlert('Enter your FMP API key.'); return; }
-
-  const urls = fmpBuildUrls(t, key);
-  const [rI, rB, rC] = await Promise.all([
-    fmpFetch(urls.income).then(x=>({...x,name:'income-statement'})),
-    fmpFetch(urls.balance).then(x=>({...x,name:'balance-sheet'})),
-    fmpFetch(urls.cashflow).then(x=>({...x,name:'cash-flow'})),
-  ]);
-
-  // Render basic table using existing functions if present
-  const map = fmpExtract(rI.json, rB.json, rC.json);
-  renderFmpTables([rI,rB,rC], map);
-
-  lastAttempt = 'FMP'; resetStatus(); writeParsedToInputs(map);
-
-  // New: derive missing fields and write them
-  const derived = fmpExtractEnhanced(rI.json, rB.json, rC.json);
-  writeDerivedToInputs(derived);
-
-  computeAll(); renderStatus();
-};
-// ===== /FMP ENHANCEMENTS =====
-
-
-  // Debug toggle
-  const dbgToggle = document.getElementById('debugToggle');
-  const dbgCard = document.getElementById('fmpDebugCard');
-  if (dbgToggle && dbgCard){
-    dbgToggle.addEventListener('change', (e)=>{
-      dbgCard.style.display = e.target.checked ? 'block' : 'none';
-    });
-  }
-
-  // API key show/hide
-  const toggleEye = (btnId, inputId)=>{
-    const btn = document.getElementById(btnId);
-    const input = document.getElementById(inputId);
-    if (!btn || !input) return;
-    btn.addEventListener('click', ()=>{
-      input.type = (input.type === 'password') ? 'text' : 'password';
-    });
-  };
-  toggleEye('toggleFinnhubKey','finnhubKey');
-  toggleEye('toggleFmpKey','fmpKey');
-
-  // Shared state for verdict
-  const V = { fscore: null, roic: null, spread: null, growthPct: null, growthClass: '—' };
-
-  function computeVerdict(){
+}function computeVerdict(){
   try{
     // Read DOM
     const scoreText = (document.getElementById('totalScore')?.textContent||'').split('/')[0].trim();
