@@ -946,11 +946,9 @@
     g('valueFlag').className = 'chip';
     g('notes').textContent = 'Enter a WACC to see value creation or destruction.';
   }
-}
-	<script>
-function computeVerdict(){
+}function computeVerdict(){
   try{
-    // ensure global state object exists (prevents ReferenceError)
+    // ensure global state object exists
     const V = (window.V = window.V || {});
 
     // Read DOM
@@ -967,7 +965,7 @@ function computeVerdict(){
     const gParsed = parseFloat(cgTxt);
     const wParsed = parseFloat(waccTxt);
 
-    // Compute spread if missing
+    // Compute spread if not present
     let spreadVal = Number.isFinite(sParsed) ? sParsed : null;
     if (spreadVal==null && Number.isFinite(rParsed) && Number.isFinite(wParsed)){
       spreadVal = rParsed - wParsed;
@@ -975,7 +973,7 @@ function computeVerdict(){
       if (spreadEl) spreadEl.textContent = spreadVal.toFixed(2) + '%';
     }
 
-    // Derive growth class if blank
+    // Derive growth class if blank but we have a number
     let growthClass = gClassTxt && gClassTxt !== '—' ? gClassTxt : null;
     if (!growthClass && Number.isFinite(gParsed)){
       growthClass = (gParsed >= 30) ? 'High' : (gParsed >= 25 ? 'Moderate' : 'Low');
@@ -983,30 +981,31 @@ function computeVerdict(){
       if (gEl) gEl.textContent = growthClass;
     }
 
-    // Save to V
+    // Stash into V for consistency
     V.fscore = Number.isFinite(fParsed) ? fParsed : null;
     V.roic = Number.isFinite(rParsed) ? rParsed : null;
     V.spread = Number.isFinite(spreadVal) ? spreadVal : null;
     V.growthPct = Number.isFinite(gParsed) ? gParsed : null;
     V.growthClass = growthClass || gClassTxt || '—';
 
-    // Fill Composite Verdict KPIs
+    // Output fields in Composite Verdict panel
     const vFs = document.getElementById('vFscore');
     const vSp = document.getElementById('vSpread');
     const vGc = document.getElementById('vGrowthClass');
     const vGn = document.getElementById('vGrowthNum');
+
     if (vFs) vFs.textContent = (V.fscore!=null) ? (V.fscore + ' / 9') : '—';
     if (vSp) vSp.textContent = (V.spread!=null) ? (V.spread.toFixed(2) + '%') : '—';
     if (vGc) vGc.textContent = V.growthClass || '—';
     if (vGn) vGn.textContent = (V.growthPct!=null) ? (V.growthPct.toFixed(2) + '%') : '—';
 
-    // Verdict elements
+    // Elements for verdict
     const vLabel = document.getElementById('verdictLabel');
     const vBadge = document.getElementById('verdictBadge');
     const vEmoji = document.getElementById('verdictEmoji');
     const vReason= document.getElementById('verdictReason');
 
-    // Need F-Score and Spread
+    // Require F-Score and Spread. Growth optional.
     if (V.fscore==null || V.spread==null){
       if (vLabel) vLabel.textContent = 'Needs inputs';
       if (vEmoji) vEmoji.textContent = '—';
@@ -1023,36 +1022,61 @@ function computeVerdict(){
 
     // Buckets
     const fBucket = (V.fscore >= 7) ? 'strong' : (V.fscore >= 4 ? 'avg' : 'weak');
+    // Align to chip: > +0.5 positive, < -0.5 negative, else flat
     const sBucket = (V.spread > 0.5) ? 'positive' : (V.spread < -0.5 ? 'negative' : 'flat');
     const gBucket = (V.growthPct==null) ? 'unknown' : (V.growthPct >= 30) ? 'ok' : (V.growthPct >= 25) ? 'borderline' : 'weak';
 
-    // Verdict
+    // Verdict rules
     let verdict = 'Neutral / Needs work';
     let emoji   = '•';
     let badge   = 'kpi na';
+
     if (fBucket==='strong' && sBucket==='positive' && (gBucket==='ok' || gBucket==='borderline' || gBucket==='unknown')){
-      verdict = 'Strong Candidate'; emoji = '✓'; badge = 'kpi good';
+      verdict = 'Strong Candidate';
+      emoji   = '✓';
+      badge   = 'kpi good';
     } else if ((fBucket==='strong' || fBucket==='avg') && sBucket!=='negative' && gBucket!=='weak'){
-      verdict = 'Watch / Conditional Buy'; emoji = '◔'; badge = 'kpi';
+      verdict = 'Watch / Conditional Buy';
+      emoji   = '◔';
+      badge   = 'kpi';
     } else if (fBucket==='weak' || sBucket==='negative'){
-      verdict = 'Avoid for now'; emoji = '×'; badge = 'kpi bad';
+      verdict = 'Avoid for now';
+      emoji   = '×';
+      badge   = 'kpi bad';
     }
 
+    // Reasons
     const reasons = [];
     reasons.push(`F-Score ${V.fscore}/9 (${fBucket})`);
     reasons.push(`Spread ${V.spread.toFixed(2)}% (${sBucket})`);
-    reasons.push(V.growthPct!=null
-      ? `Growth ${V.growthPct.toFixed(2)}% (${gBucket}; ${V.growthClass})`
-      : `Growth — (${gBucket})`);
+    if (V.growthPct!=null){
+      reasons.push(`Growth ${V.growthPct.toFixed(2)}% (${gBucket}; ${V.growthClass})`);
+    }else{
+      reasons.push(`Growth — (${gBucket})`);
+    }
 
     if (vLabel) vLabel.textContent = verdict;
     if (vEmoji) vEmoji.textContent = emoji;
     if (vBadge) vBadge.className   = badge;
     if (vReason) vReason.textContent = reasons.join(' • ');
-  } catch(e){
-    if (window.DBG?.log) DBG.log('computeVerdict error: ' + (e.message||e));
-  }
+  }catch(e){ /* no-op */ }
 }
+
+  // Patch compute functions to also compute verdict
+  const __old_computeAll = computeAll;
+  computeAll = function(){ __old_computeAll(); computeVerdict(); };
+
+  // Recompute verdict on key inputs
+  ['wacc','r1','r2','r3','r4'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', computeVerdict);
+  });
+  // Also recompute on theme toggle just to be safe (no-op if values unchanged)
+  if (toggle) toggle.addEventListener('change', computeVerdict);
+
+  // Initial verdict state
+  computeVerdict();
+
 </script>
 
 <!-- ===== FMP DEBUG CONSOLE (auto-injected) ===== -->
@@ -1256,7 +1280,7 @@ function revenueSeries(facts, n=5){
   return [];
 }
 
-function pct(a,b){ if (b === 0 || b == null || a == null) return null; return (a/b - 1) * 100; }
+function pctChange(a,b){ if (b === 0 || b == null || a == null) return null; return (a/b - 1) * 100; }
 function set(id, v){ const el = document.getElementById(id); if (el) el.value = (v ?? ''); }
 
   function getTicker(){
@@ -1393,10 +1417,10 @@ const RETE = latestAnnual(facts, EXTRA.retained);
 
 // Revenue growth % (last four YoY)
 const revs = revenueSeries(facts, 5); // [Y0,Y-1,Y-2,Y-3,Y-4]
-const g1 = revs.length>=2 ? pct(revs[0], revs[1]) : null;
-const g2 = revs.length>=3 ? pct(revs[1], revs[2]) : null;
-const g3 = revs.length>=4 ? pct(revs[2], revs[3]) : null;
-const g4 = revs.length>=5 ? pct(revs[3], revs[4]) : null;
+const g1 = revs.length>=2 ? pctChange(revs[0], revs[1]) : null;
+const g2 = revs.length>=3 ? pctChange(revs[1], revs[2]) : null;
+const g3 = revs.length>=4 ? pctChange(revs[2], revs[3]) : null;
+const g4 = revs.length>=5 ? pctChange(revs[3], revs[4]) : null;
 
 // Write to inputs — change IDs here if yours differ
 set('ebit', EBIT);
