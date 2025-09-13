@@ -1276,108 +1276,84 @@ runFmpFetchViaDebug = async function(){
   // Shared state for verdict
   const V = { fscore: null, roic: null, spread: null, growthPct: null, growthClass: '—' };
 
- <script>
-function computeVerdict(){
+  function computeVerdict(){
   try{
-    // helpers
-    const q = (sel) => document.querySelector(sel);
-    const firstEl = (...sels) => sels.map(s=>q(s)).find(Boolean) || null;
-    const numFrom = (el) => {
-      if (!el) return null;
-      const raw = ('value' in el && el.value !== '' ? el.value : (el.textContent || ''))
-        .replace(/[%,$\s]/g,'');
-      const n = parseFloat(raw);
-      return Number.isFinite(n) ? n : null;
-    };
-    const firstNum = (...sels) => {
-      for (const s of sels){
-        const el = q(s);
-        const n = numFrom(el);
-        if (n != null) return n;
-      }
-      return null;
-    };
-    const firstText = (...sels) => {
-      for (const s of sels){
-        const el = q(s);
-        if (el && (el.textContent || el.value)) return (el.textContent || el.value).trim();
-      }
-      return '—';
-    };
-    const setText = (sel, text) => { const el = q(sel); if (el) el.textContent = text; };
+    // Read DOM
+    const scoreText = (document.getElementById('totalScore')?.textContent||'').split('/')[0].trim();
+    const spreadTxt = (document.getElementById('spread')?.textContent||'').replace('%','').trim();
+    const roicTxt   = (document.getElementById('roicOut')?.textContent||'').replace('%','').trim();
+    const cgTxt     = (document.getElementById('cumOut')?.textContent||'').replace('%','').trim();
+    const gClassTxt = (document.getElementById('growthClass')?.textContent||'—').trim();
+    const waccTxt   = (document.getElementById('wacc')?.value||'').replace('%','').trim();
 
-    // read values with robust fallbacks
-    const fscore = (typeof V?.fscore === 'number') ? V.fscore :
-      firstNum('#totalScore', '#fscoreOut', '#fscoreTotal', '[data-field="fscore"]');
+    const fParsed = parseFloat(scoreText);
+    const sParsed = parseFloat(spreadTxt);
+    const rParsed = parseFloat(roicTxt);
+    const gParsed = parseFloat(cgTxt);
+    const wParsed = parseFloat(waccTxt);
 
-    let roic = (typeof V?.roic === 'number') ? V.roic :
-      firstNum('#roicOut', '#roic', '[data-field="roic"]');
-
-    const wacc = firstNum('#wacc', '#waccPct', '#waccInput', '[name="wacc"]', '[data-field="wacc"]');
-
-    let spread = firstNum('#spread', '#spreadOut', '#roicMinusWacc', '[data-field="spread"]');
-
-    const growthPct = (typeof V?.growthPct === 'number') ? V.growthPct :
-      firstNum('#cumOut', '#cumGrowthOut', '[data-field="cumGrowth"]');
-
-    let growthClass = (V?.growthClass && V.growthClass !== '—') ? V.growthClass :
-      firstText('#growthClass', '#growthBucket', '[data-field="growthClass"]');
-
-    // compute missing pieces where possible
-    if (spread == null && roic != null && wacc != null){
-      spread = roic - wacc;
-      const spreadEl = firstEl('#spread', '#spreadOut', '#roicMinusWacc', '[data-field="spread"]');
-      if (spreadEl) spreadEl.textContent = `${spread.toFixed(2)}%`;
+    // Compute spread if not present
+    let spreadVal = Number.isFinite(sParsed) ? sParsed : null;
+    if (spreadVal==null && Number.isFinite(rParsed) && Number.isFinite(wParsed)){
+      spreadVal = rParsed - wParsed;
+      const spreadEl = document.getElementById('spread');
+      if (spreadEl) spreadEl.textContent = spreadVal.toFixed(2) + '%';
     }
 
-    if ((!growthClass || growthClass === '—') && growthPct != null){
-      growthClass = (growthPct >= 30) ? 'High' : (growthPct >= 25 ? 'Moderate' : 'Low');
-      const gEl = firstEl('#growthClass', '#growthBucket', '[data-field="growthClass"]');
+    // Derive growth class if blank but we have a number
+    let growthClass = gClassTxt && gClassTxt !== '—' ? gClassTxt : null;
+    if (!growthClass && Number.isFinite(gParsed)){
+      growthClass = (gParsed >= 30) ? 'High' : (gParsed >= 25 ? 'Moderate' : 'Low');
+      const gEl = document.getElementById('growthClass');
       if (gEl) gEl.textContent = growthClass;
     }
 
-    // stash back into V
-    V.fscore = Number.isFinite(fscore) ? fscore : null;
-    V.roic = Number.isFinite(roic) ? roic : null;
-    V.spread = Number.isFinite(spread) ? spread : null;
-    V.growthPct = Number.isFinite(growthPct) ? growthPct : null;
-    V.growthClass = growthClass || '—';
+    // Stash into V for consistency
+    V.fscore = Number.isFinite(fParsed) ? fParsed : null;
+    V.roic = Number.isFinite(rParsed) ? rParsed : null;
+    V.spread = Number.isFinite(spreadVal) ? spreadVal : null;
+    V.growthPct = Number.isFinite(gParsed) ? gParsed : null;
+    V.growthClass = growthClass || gClassTxt || '—';
 
-    // side readouts
-    setText('#vFscore', (V.fscore!=null) ? `${V.fscore} / 9` : '—');
-    setText('#vSpread', (V.spread!=null) ? `${V.spread.toFixed(2)}%` : '—');
-    setText('#vGrowthClass', V.growthClass || '—');
-    setText('#vGrowthNum', (V.growthPct!=null) ? `${V.growthPct.toFixed(2)}%` : '—');
+    // Output fields in Composite Verdict panel
+    const vFs = document.getElementById('vFscore');
+    const vSp = document.getElementById('vSpread');
+    const vGc = document.getElementById('vGrowthClass');
+    const vGn = document.getElementById('vGrowthNum');
 
-    // verdict even if growth is missing; require fscore & spread at minimum
-    const vLabel = q('#verdictLabel');
-    const vBadge = q('#verdictBadge');
-    const vEmoji = q('#verdictEmoji');
-    const vReason= q('#verdictReason');
+    if (vFs) vFs.textContent = (V.fscore!=null) ? (V.fscore + ' / 9') : '—';
+    if (vSp) vSp.textContent = (V.spread!=null) ? (V.spread.toFixed(2) + '%') : '—';
+    if (vGc) vGc.textContent = V.growthClass || '—';
+    if (vGn) vGn.textContent = (V.growthPct!=null) ? (V.growthPct.toFixed(2) + '%') : '—';
 
+    // Elements for verdict
+    const vLabel = document.getElementById('verdictLabel');
+    const vBadge = document.getElementById('verdictBadge');
+    const vEmoji = document.getElementById('verdictEmoji');
+    const vReason= document.getElementById('verdictReason');
+
+    // Require F-Score and Spread. Growth optional.
     if (V.fscore==null || V.spread==null){
       if (vLabel) vLabel.textContent = 'Needs inputs';
       if (vEmoji) vEmoji.textContent = '—';
-      if (vReason) {
-        const miss = [
-          (V.fscore==null ? 'F-Score' : null),
-          (V.spread==null ? 'ROIC & WACC (to compute spread)' : null)
-        ].filter(Boolean).join(', ');
-        vReason.textContent = `Missing: ${miss}.`;
-      }
       if (vBadge) vBadge.className = 'kpi na';
+      if (vReason){
+        const miss = [
+          V.fscore==null ? 'F-Score' : null,
+          V.spread==null ? 'ROIC & WACC (to compute spread)' : null
+        ].filter(Boolean).join(', ');
+        vReason.textContent = miss ? ('Missing: ' + miss + '.') : '';
+      }
       return;
     }
 
-    // buckets (aligned thresholds)
+    // Buckets
     const fBucket = (V.fscore >= 7) ? 'strong' : (V.fscore >= 4 ? 'avg' : 'weak');
+    // Align to chip: > +0.5 positive, < -0.5 negative, else flat
     const sBucket = (V.spread > 0.5) ? 'positive' : (V.spread < -0.5 ? 'negative' : 'flat');
-    const gBucket = (V.growthPct==null) ? 'unknown'
-                   : (V.growthPct >= 30) ? 'ok'
-                   : (V.growthPct >= 25) ? 'borderline'
-                   : 'weak';
+    const gBucket = (V.growthPct==null) ? 'unknown' : (V.growthPct >= 30) ? 'ok' : (V.growthPct >= 25) ? 'borderline' : 'weak';
 
-    // decision
+    // Verdict rules
     let verdict = 'Neutral / Needs work';
     let emoji   = '•';
     let badge   = 'kpi na';
@@ -1396,13 +1372,13 @@ function computeVerdict(){
       badge   = 'kpi bad';
     }
 
-    // reasons
+    // Reasons
     const reasons = [];
     reasons.push(`F-Score ${V.fscore}/9 (${fBucket})`);
     reasons.push(`Spread ${V.spread.toFixed(2)}% (${sBucket})`);
     if (V.growthPct!=null){
       reasons.push(`Growth ${V.growthPct.toFixed(2)}% (${gBucket}; ${V.growthClass})`);
-    } else {
+    }else{
       reasons.push(`Growth — (${gBucket})`);
     }
 
@@ -1410,30 +1386,8 @@ function computeVerdict(){
     if (vEmoji) vEmoji.textContent = emoji;
     if (vBadge) vBadge.className   = badge;
     if (vReason) vReason.textContent = reasons.join(' • ');
-  }catch(e){ /* keep UI quiet */ }
+  }catch(e){ /* no-op */ }
 }
-
-// --- safe hook & listeners ---
-const __old_computeAll = (typeof computeAll === 'function') ? computeAll : function(){};
-computeAll = function(){ __old_computeAll(); computeVerdict(); };
-
-// listen to common WACC ids
-['#wacc','#waccPct','#waccInput','[name="wacc"]','[data-field="wacc"]']
-  .forEach(sel => { const el = document.querySelector(sel); if (el) el.addEventListener('input', computeVerdict); });
-
-// observe changes on key chips/outputs
-['#totalScore','#fscoreOut','#fscoreTotal','#roicOut','#cumOut','#growthClass','#spread']
-  .forEach(sel=>{
-    const el = document.querySelector(sel);
-    if (!el) return;
-    const mo = new MutationObserver(computeVerdict);
-    mo.observe(el, {childList:true, characterData:true, subtree:true});
-  });
-
-// first run
-computeVerdict();
-</script>
-
 
   // Patch compute functions to also compute verdict
   const __old_computeAll = computeAll;
