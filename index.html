@@ -1468,6 +1468,26 @@ const DBG = (() => {
   return { log, fetch: fetchTrace, field };
 })();
 </script>
+<script>
+/* Debug shim — defines window.DBG if missing so SEC calls won't crash */
+(function initDebugShim(){
+  try{
+    if (window.DBG) return;
+    window.DBG = {
+      log:   (...m) => { try { console.log(...m); } catch {} },
+      field: (...m) => { /* no-op when debug UI is hidden */ },
+      fetch: async (url, opts = {}, label = '') => {
+        const t0 = performance.now();
+        const resp = await fetch(url, opts);
+        const ct = resp.headers?.get('content-type') || '';
+        let data = null;
+        try { data = ct.includes('json') ? await resp.json() : await resp.text(); } catch {}
+        return { ok: resp.ok, status: resp.status, data, ms: Math.round(performance.now() - t0) };
+      }
+    };
+  } catch {}
+})();
+</script>
 
 
 <script>
