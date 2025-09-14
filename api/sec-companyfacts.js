@@ -1,26 +1,36 @@
+// api/sec-companyfacts.js
 export default async function handler(req, res) {
-  const { cik } = req.query;
-  const padded = String(cik || '').replace(/\D/g, '').padStart(10, '0');
-  if (!/^\d{10}$/.test(padded)) return res.status(400).json({ error: 'bad CIK' });
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate');
 
-  const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${padded}.json`;
+  const UA = process.env.SEC_UA || 'BubbleHub-StockEval/1.0 (you@example.com)';
+  let { cik, ticker } = req.query || {};
+
   try {
-    const r = await fetch(url, {
-      headers: {
-        'User-Agent': 'Alpha-Ledger/1.0 (you@example.com)',
-        'Accept': 'application/json'
+    // If ticker is provided, map to CIK on the server
+    if (!cik && ticker) {
+      const r = await fetch('https://www.sec.gov/files/company_tickers.json', {
+        headers: { 'User-Agent': UA, 'Accept': 'application/json' }
+      });
+      if (!r.ok) return res.status(r.status).json({ error: 'tickers fetch failed' });
+      const data = await r.json();
+
+      const want = String(ticker).trim().toUpperCase();
+      for (const k in data) {
+        if (data[k].ticker === want) { cik = data[k].cik_str; break; }
       }
-    });
-    const text = await r.text();
-    if (!r.ok) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(r.status).json({ error: true, status: r.status, body: text.slice(0, 2000) });
+      if (!cik) return res.status(404).json({ error: 'CIK not found' });
     }
-    let data; try { data = JSON.parse(text); } catch { return res.status(502).json({ error:true, status:502, body:'Invalid JSON from SEC' }); }
-    res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.status(200).json(data);
+
+    if (!cik) return res.status(400).json({ error: 'ticker or cik required' });
+
+    const cik10 = String(cik).replace(/\D/g, '').padStart(10, '0'); // zero-pad
+    const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${cik10}.json`;
+
+    const rf = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } });
+    const json = await rf.json();
+    return res.status(rf.ok ? 200 : rf.status).json(json);
   } catch (e) {
-    return res.status(500).json({ error:true, message:String(e) });
+    return res.status(500).json({ error: 'server error', detail: String(e) });
   }
 }
